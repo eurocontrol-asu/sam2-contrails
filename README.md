@@ -28,12 +28,6 @@ The full methodology, experiments, and results are described in our paper
 All design choices — prompt encoding, architecture modifications, training setup,
 and evaluation protocol — are explained in detail there.
 
-<p align="center">
-  <a href="assets/video_00012.mp4">
-    <img src="assets/fig_architecture.png" alt="Click to view demo video" width="900"/>
-  </a>
-</p>
-
 ---
 
 ## Pipeline
@@ -453,6 +447,7 @@ uv run contrailtrack generate-prompts \
 ```
 
 This writes:
+
 ```
 per_object_data_age_5/
   {video_id:05d}/
