@@ -1,0 +1,67 @@
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*-checkpoint.ipynb
+.venv
+*.egg*
+build/*
+dist/
+_C.*
+*.log
+
+# Environment files (may contain API keys)
+.env
+
+# Images — exclude generated/output PNGs, but keep repo assets
+*.png
+!assets/*.png
+
+# Model weights (hosted on Hugging Face)
+checkpoints/*.pt
+demo/backend/checkpoints/*.pt
+
+# LaTeX build artifacts
+*.aux
+*.out
+*.pdf
+*.synctex.gz
+*.bbl
+*.blg
+
+# Private research content (not part of the open-source release)
+paper/
+slides/
+notebooks/
+tmp/
+outputs/
+evaluation/
+evaluation_results/
+error_analysis/
+inputs/
+sav_dataset/
+
+# Internal tools (not part of the public package)
+tools/
+
+# Internal infrastructure / CI scripts (not part of the public package)
+install_az.py
+backend.Dockerfile
+docker-compose.yaml
+batch_study.sh
+AGENTS.md
+CHANGELOG.txt
+
+# Generated data
+data/
+results/
+
+# IDE / caches
+.claude/
+.evaluation/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+SAM_2.egg-info/
+sam2_contrails.egg-info/

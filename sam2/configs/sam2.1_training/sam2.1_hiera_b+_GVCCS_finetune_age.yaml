@@ -1,0 +1,403 @@
+# @package _global_
+# Original model configuration (use_prompt_in_obj_ptr=false, no prompt gate)
+# Compatible with standard SAM 2.1 pretrained checkpoint (maskmem_tpos_enc ignored)
+
+scratch:
+  resolution: 1024
+  train_batch_size: 1
+  num_train_workers: 5
+  # Number of frames per training sample
+  num_frames: 13
+  # Take every N-th frame (1=consecutive, 2=every other).
+  # With num_frames=13, frame_stride=2: covers 26 actual frames using only 13.
+  frame_stride: 2
+  # Single-object training: one flight per sample, full lifecycle
+  max_num_objects: 1
+  # Whether to use ternary prompts {-1, 0, +1} (requires all_prompts_union.png)
+  # False = standard binary prompts {0, 1}
+  use_ternary_prompts: false
+  base_lr: 5.0e-6
+  vision_lr: 3.0e-06
+  phases_per_epoch: 1
+  num_epochs: 15
+
+dataset:
+  # PATHS to Dataset
+  img_folder: /path/to/GVCCS/train/img_folder         # CONFIGURE: path to training frame folders
+  gt_folder: /path/to/GVCCS/train/per_object_data_age_5  # CONFIGURE: path to prompt+mask folders
+  multiplier: 1  # object-centric: each object seen once per epoch
+
+# Video transforms
+vos:
+  train_transforms:
+    - _target_: training.dataset.transforms.ComposeAPI
+      transforms:
+        - _target_: training.dataset.transforms.RandomHorizontalFlip
+          consistent_transform: True
+        - _target_: training.dataset.transforms.RandomVerticalFlip
+          consistent_transform: True
+        - _target_: training.dataset.transforms.RandomAffine
+          degrees: 25
+          image_interpolation: bilinear
+          consistent_transform: True
+        - _target_: training.dataset.transforms.ColorJitter
+          consistent_transform: True
+          brightness: 0.1
+          contrast: 0.03
+          saturation: 0.03
+          hue: null
+        - _target_: training.dataset.transforms.RandomGrayscale
+          p: 0.05
+          consistent_transform: True
+        - _target_: training.dataset.transforms.ColorJitter
+          consistent_transform: False
+          brightness: 0.1
+          contrast: 0.05
+          saturation: 0.05
+          hue: null
+        - _target_: training.dataset.transforms.ToTensorAPI
+
+trainer:
+  _target_: training.trainer.Trainer
+  mode: train_only  # train_only: skip validation, train: train + val
+  max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
+  accelerator: cuda
+  seed_value: 123
+  gradient_accumulation_steps: 4  # effective batch = train_batch_size * accumulation_steps
+
+  model:
+    _target_: training.model.sam2.SAM2DensePromptTrain
+    image_encoder:
+      _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
+      scalp: 1
+      trunk:
+        _target_: sam2.modeling.backbones.hieradet.Hiera
+        embed_dim: 112
+        num_heads: 2
+        drop_path_rate: 0.1
+      neck:
+        _target_: sam2.modeling.backbones.image_encoder.FpnNeck
+        position_encoding:
+          _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+          num_pos_feats: 256
+          normalize: true
+          scale: null
+          temperature: 10000
+        d_model: 256
+        backbone_channel_list: [896, 448, 224, 112]
+        fpn_top_down_levels: [2, 3]  # output level 0 and 1 directly use the backbone features
+        fpn_interp_model: nearest
+
+    memory_attention:
+      _target_: sam2.modeling.memory_attention.MemoryAttention
+      d_model: 256
+      pos_enc_at_input: true
+      layer:
+        _target_: sam2.modeling.memory_attention.MemoryAttentionLayer
+        activation: relu
+        dim_feedforward: 2048
+        dropout: 0.1
+        pos_enc_at_attn: false
+        self_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+        d_model: 256
+        pos_enc_at_cross_attn_keys: true
+        pos_enc_at_cross_attn_queries: false
+        cross_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          rope_k_repeat: True
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+          kv_in_dim: 64
+      num_layers: 4
+
+    memory_encoder:
+        _target_: sam2.modeling.memory_encoder.MemoryEncoder
+        out_dim: 64
+        position_encoding:
+          _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
+          num_pos_feats: 64
+          normalize: true
+          scale: null
+          temperature: 10000
+        mask_downsampler:
+          _target_: sam2.modeling.memory_encoder.MaskDownSampler
+          kernel_size: 3
+          stride: 2
+          padding: 1
+        fuser:
+          _target_: sam2.modeling.memory_encoder.Fuser
+          layer:
+            _target_: sam2.modeling.memory_encoder.CXBlock
+            dim: 256
+            kernel_size: 7
+            padding: 3
+            layer_scale_init_value: 1e-6
+            use_dwconv: True  # depth-wise convs
+          num_layers: 2
+
+    num_maskmem: 7
+    image_size: ${scratch.resolution}
+    
+    # Sigmoid scale/bias for mask logits in memory encoder.
+    # Controls how predicted masks are converted before being stored in memory:
+    #   mask_for_mem = sigmoid(logits) * scale + bias
+    #
+    # scale=20, bias=-10 (MOSE default): near-binary [-10, +10], good for dense blobs.
+    # scale=1,  bias=0   (b+ pretrained): soft [0, 1], preserves uncertainty.
+    #
+    # For thin contrails: scale=20 erodes thin structures at 64x64 memory resolution
+    # because partial-coverage pixels (logit ~0.3) map to near-zero in memory.
+    # Using scale=1, bias=0 to match the pretrained b+ checkpoint and preserve
+    # thin-line signal in memory. The pretrained memory encoder expects [0, 1] range.
+    sigmoid_scale_for_mem_enc: 1.0
+    sigmoid_bias_for_mem_enc: 0.0
+    use_mask_input_as_output_without_sam: false # Important! 
+    
+    # on the first frame, whether to directly add the no-memory embedding to the image feature
+    # (instead of using the transformer encoder)      
+    directly_add_no_mem_embed: true
+
+    # add no obj embedding to spatial frames
+    no_obj_embed_spatial: true
+
+    # whether to apply non-overlapping constraints on the object masks in the memory encoder during evaluation (to avoid/alleviate superposing masks)
+    non_overlap_masks_for_mem_enc: false # Default: false
+    max_cond_frames_in_attn: 5 # Restrict conditioning frames
+
+    # Whether to use temporal positional encoding for conditioning frames based on actual distance.
+    # True: Better for dense sequential conditioning (prompts on every frame, like contrail tracking)
+    #       Recent frames get stronger temporal encoding, improving temporal consistency
+    # False: Standard SAM2 (all conditioning frames treated as timeless anchors)
+    #        Better for sparse interactive clicking where temporal order doesn't matter
+    use_temporal_pos_for_cond_frames: true # Default: false, set to true for dense prompts
+
+    # Add prompt spatial info to object pointers stored in memory.
+    # Encodes "where object should be" (from prompt) into pointer, not just "where predicted".
+    # Helps prevent cross-contamination at trajectory crossings by anchoring memory to prompt.
+    use_prompt_in_obj_ptr: false
+
+    # use high-resolution feature map in the SAM mask decoder
+    use_high_res_features_in_sam: true 
+
+    # whether to output multiple (3) masks for the first click on initial conditioning frames
+    multimask_output_in_sam: true
+    
+    # whether to use sigmoid to restrict ious prediction to [0-1]
+    iou_prediction_use_sigmoid: true
+    
+    # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
+    use_obj_ptrs_in_encoder: true # Default: false
+    # 16 object pointers: full temporal coverage across training window
+    max_obj_ptrs_in_encoder: 16
+    add_tpos_enc_to_obj_ptrs: true # Default: false
+    proj_tpos_enc_in_obj_ptrs: true # Default: false
+    use_signed_tpos_enc_to_obj_ptrs: true # Default: false
+    only_obj_ptrs_in_the_past_for_eval: true # Default: true
+    
+    # object occlusion prediction
+    # Whether to predict if there is an object in the frame
+    pred_obj_scores: true
+    pred_obj_scores_mlp: true
+
+    # Only relevant if pred_obj_scores=True and use_obj_ptrs_in_encoder=True;
+    # Whether to have a fixed no obj pointer when there is no object present
+    # or to use it as an additive embedding with obj_ptr produced by decoder
+    fixed_no_obj_ptr: true 
+    
+    # Soft no object, i.e. mix in no_obj_ptr softly,
+    # hope to make recovery easier if there is a mistake and mitigate accumulation of errors
+    soft_no_obj_ptr: true  
+    use_mlp_for_obj_ptr_proj: true 
+
+    # multimask tracking settings
+    multimask_output_for_tracking: true # Default: false
+    use_multimask_token_for_obj_ptr: true # Default: false
+
+    # LEGACY: No prompt gate (standard SAM 2.1 architecture)
+    sam_mask_decoder_extra_args:
+      use_prompt_gate: false
+
+  data:
+    train:
+      _target_: training.dataset.sam2_datasets.TorchTrainMixedDataset
+      phases_per_epoch: ${scratch.phases_per_epoch}
+      batch_sizes:
+        - ${scratch.train_batch_size}
+      shuffle: true
+      num_workers: ${scratch.num_train_workers}
+      pin_memory: true
+      drop_last: true
+
+      datasets:
+        - _target_: training.dataset.utils.RepeatFactorWrapper
+          dataset:
+            _target_: training.dataset.utils.ConcatDataset
+            datasets:
+            - _target_: training.dataset.vos_dataset.VOSDataset
+              transforms: ${vos.train_transforms}
+              training: true
+              always_target: true
+              object_centric: true
+              multiplier: ${dataset.multiplier}
+              video_dataset:
+                _target_: training.dataset.vos_raw_dataset.PNGRawDataset
+                single_object_mode: false
+                is_palette: false
+                img_folder: ${dataset.img_folder}
+                gt_folder: ${dataset.gt_folder}
+                use_ternary_prompts: ${scratch.use_ternary_prompts}
+              sampler:
+                _target_: training.dataset.vos_sampler.LifecycleSampler
+                num_frames: ${scratch.num_frames}
+                frame_stride: ${scratch.frame_stride}
+                post_evidence_frames: 3
+      collate_fn:
+        _target_: training.utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: all
+
+  optim:
+    amp:
+      enabled: True
+      amp_dtype: bfloat16
+
+    optimizer:
+      _target_: torch.optim.AdamW
+
+    gradient_clip:
+      _target_: training.optimizer.GradientClipper
+      max_norm: 0.1
+      norm_type: 2
+
+    param_group_modifiers:
+      - _target_: training.optimizer.layer_decay_param_modifier
+        _partial_: True
+        layer_decay_value: 0.9
+        apply_to: 'image_encoder.trunk'
+        overrides:
+          - pattern: '*pos_embed*'
+            value: 1.0
+
+    options:
+      lr:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CompositeParamScheduler
+            schedulers:
+              - _target_: fvcore.common.param_scheduler.LinearParamScheduler
+                start_value: ${divide:${scratch.base_lr},10}
+                end_value: ${scratch.base_lr}
+              - _target_: fvcore.common.param_scheduler.CosineParamScheduler
+                start_value: ${scratch.base_lr}
+                end_value: ${divide:${scratch.base_lr},10}
+            lengths: [0.05, 0.95]
+            interval_scaling: ['rescaled', 'rescaled']
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CompositeParamScheduler
+            schedulers:
+              - _target_: fvcore.common.param_scheduler.LinearParamScheduler
+                start_value: ${divide:${scratch.vision_lr},10}
+                end_value: ${scratch.vision_lr}
+              - _target_: fvcore.common.param_scheduler.CosineParamScheduler
+                start_value: ${scratch.vision_lr}
+                end_value: ${divide:${scratch.vision_lr},10}
+            lengths: [0.05, 0.95]
+            interval_scaling: ['rescaled', 'rescaled']
+          param_names:
+            - 'image_encoder.*'
+      weight_decay:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.1
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.0
+          param_names:
+            - '*bias*'
+          module_cls_names: ['torch.nn.LayerNorm']
+
+  loss:
+    all:
+      _target_: training.loss_fns.MultiStepMultiMasksAndIous
+      weight_dict:
+        # Contrail-specific loss weighting:
+        # - Contrails are thin lines (<0.1% of pixels). Pixel-level focal loss
+        #   (loss_mask) is dominated by background pixels even with gamma=2,
+        #   pushing the model toward "predict nothing."
+        # - Dice loss normalizes by mask area, giving thin lines equal gradient
+        #   magnitude as dense blobs. Much better for thin structures.
+        # Original: loss_mask=20, loss_dice=1 (focal dominates, bad for thin lines)
+        loss_mask: 1
+        loss_dice: 5
+        loss_iou: 1
+        loss_class: 1
+      # Alpha for mask focal loss: weight for the POSITIVE class (contrail pixels).
+      # Default 0.25 under-weights the rare contrail pixels (<0.1% of image).
+      # 0.75 ensures thin contrail signal gets adequate gradient.
+      focal_alpha: 0.75
+      supervise_all_iou: true
+      iou_use_l1_loss: true
+      pred_obj_scores: true
+      focal_gamma_obj_score: 2.0
+      # Alpha for object score focal loss: weight for the POSITIVE class.
+      # Most flights have no contrail, so "object present" is the RARE class.
+      # alpha=0.25 (original) under-weights this rare signal.
+      # alpha=0.75 ensures the model learns to detect when contrails ARE present.
+      focal_alpha_obj_score: 0.75
+
+  distributed:
+    backend: nccl
+    find_unused_parameters: True
+
+  logging:
+    tensorboard_writer:
+      _target_: training.utils.logger.make_tensorboard_logger
+      log_dir:  ${launcher.experiment_log_dir}/tensorboard
+      flush_secs: 120
+      should_log: True
+    log_dir: ${launcher.experiment_log_dir}/logs
+    log_freq: 10
+
+  # initialize from a SAM 2 checkpoint
+  checkpoint:
+    save_dir: ${launcher.experiment_log_dir}/checkpoints
+    # Save every epoch so you can pick the best one (small dataset can overfit)
+    save_freq: 0
+
+    model_weight_initializer:
+      _partial_: True
+      _target_: training.utils.checkpoint_utils.load_state_dict_into_model
+      strict: True
+      ignore_unexpected_keys: null
+      ignore_missing_keys: null
+
+      state_dict:
+        _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
+        checkpoint_path: ./checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
+        ckpt_state_dict_keys: ['model']
+
+launcher:
+  num_nodes: 1
+  gpus_per_node: 1
+  experiment_log_dir: ./logs                                       # CONFIGURE: output directory for checkpoints and logs
+
+# SLURM args if running on a cluster
+submitit:
+  partition: null
+  account: null
+  qos: null
+  cpus_per_task: 10
+  use_cluster: false
+  timeout_hour: 24
+  name: null
+  port_range: [10000, 65000]
