@@ -569,6 +569,8 @@ Please also cite the original SAM 2 paper:
 
 We are grateful to the following organisations and projects:
 
+- **[Reuniwatt](https://www.reuniwatt.com)** — the all-sky cameras used to
+  record the GVCCS dataset were purchased from Reuniwatt by EUROCONTROL.
 - **[Encord](https://encord.com)** — for the annotation platform used to label
   the contrail segmentation masks.
 - **[OpenSky Network](https://opensky-network.org)** — for providing the ADS-B
