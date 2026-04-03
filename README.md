@@ -67,7 +67,9 @@ EUROCONTROL's experimental centre in Bretigny-sur-Orge, France.
 > **Dataset**: [GVCCS on Zenodo](https://zenodo.org/records/16612390)
 
 The dataset contains annotated all-sky camera videos with per-flight contrail
-segmentation masks, ADS-B flight trajectories, and ERA5 meteorological data.
+segmentation masks and ADS-B flight trajectories. ERA5 meteorological data is
+not included and must be obtained separately via the
+[Copernicus Climate Data Store](https://cds.climate.copernicus.eu).
 
 ---
 
