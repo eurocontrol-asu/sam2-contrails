@@ -111,3 +111,105 @@ def export_coco_json(
         json.dump(result, f, indent=2)
 
     return output_path
+
+
+def export_prompts_coco_json(
+    prompts_dir: str | Path,
+    video_id: str,
+    frame_names: list[str],
+    height: int,
+    width: int,
+    output_path: str | Path,
+    metadata: dict = None,
+) -> Path:
+    """Export prompt masks to a COCO RLE JSON matching the predictions format.
+
+    Reads the per-flight prompt PNGs from ``prompts_dir/{video_id}/{flight_id}/``
+    and encodes each non-empty mask as a COCO RLE annotation with the same
+    schema as ``export_coco_json`` (minus ``score``, plus ``age_weight``).
+
+    Args:
+        prompts_dir: Root prompts directory containing ``{video_id}/`` folders.
+        video_id: Video identifier.
+        frame_names: Ordered list of frame name strings (no extension).
+        height: Frame height in pixels.
+        width: Frame width in pixels.
+        output_path: Path to write the JSON file.
+        metadata: Optional dict of extra fields for "info".
+
+    Returns:
+        Path to the written file.
+    """
+    from PIL import Image
+
+    prompts_dir = Path(prompts_dir)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    video_dir = prompts_dir / video_id
+    if not video_dir.exists():
+        raise FileNotFoundError(f"Prompts directory not found: {video_dir}")
+
+    frame_name_to_idx = {fn: i for i, fn in enumerate(frame_names)}
+
+    flight_dirs = sorted(
+        d for d in video_dir.iterdir()
+        if d.is_dir()
+    )
+
+    info = {
+        "description": "contrailtrack prompt masks",
+        "version": "1.0",
+        "date_created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "type": "prompts",
+    }
+    if metadata:
+        info.update(metadata)
+
+    result = {
+        "info": info,
+        "video": {
+            "name": video_id,
+            "width": int(width),
+            "height": int(height),
+            "num_frames": len(frame_names),
+            "num_objects": len(flight_dirs),
+        },
+        "annotations": [],
+    }
+
+    ann_id = 1
+    for flight_dir in flight_dirs:
+        flight_id = flight_dir.name
+        for prompt_path in sorted(flight_dir.glob("*_prompt.png")):
+            frame_name = prompt_path.stem.replace("_prompt", "")
+            frame_idx = frame_name_to_idx.get(frame_name)
+            if frame_idx is None:
+                continue
+
+            mask_arr = np.array(Image.open(prompt_path))
+            binary = mask_arr > 0
+            area = int(binary.sum())
+            if area == 0:
+                continue
+
+            age_weight = float(mask_arr[binary].mean()) / 255.0
+
+            rle = encode_rle(binary)
+            bbox = _compute_bbox(binary)
+            result["annotations"].append({
+                "id": ann_id,
+                "flight_id": flight_id,
+                "frame_idx": frame_idx,
+                "frame_name": frame_name,
+                "segmentation": rle,
+                "area": area,
+                "bbox": bbox,
+                "age_weight": round(age_weight, 4),
+            })
+            ann_id += 1
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+
+    return output_path

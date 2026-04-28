@@ -20,6 +20,9 @@ Usage::
     # Without inference (prompts only)
     uv run python examples/07_labelling_campaign.py 2025-12-31 --no-inference
 
+    # Single continuous video (no 2h window splits, no boundary discontinuities)
+    uv run python examples/07_labelling_campaign.py 2025-12-31 --single-video
+
     # Custom output directory
     uv run python examples/07_labelling_campaign.py 2025-12-31 --output /data/contrailnet/sam2
 """
@@ -84,6 +87,9 @@ def main(
     max_propagation_frames: Annotated[
         int, typer.Option(help="Max frames to continue prediction after last prompt."),
     ] = 100,
+    single_video: Annotated[
+        bool, typer.Option(help="Process each day as a single continuous video (no 2h window splits)."),
+    ] = False,
     no_inference: Annotated[
         bool, typer.Option(help="Skip SAM2 inference (prompts only)."),
     ] = False,
@@ -115,6 +121,7 @@ def main(
                 run_inference=not no_inference,
                 skip_existing=skip_existing,
                 device=device,
+                single_video=single_video,
             )
             all_results.extend(results)
         except FileNotFoundError as e:

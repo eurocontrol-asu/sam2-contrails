@@ -45,6 +45,7 @@ def run_dry_advection(
     initial_width_m: float = _DEFAULT_INITIAL_WIDTH_M,
     extra_params: dict | None = None,
     met: "MetDataset | None" = None,
+    max_age: "pd.Timedelta | None" = None,
 ) -> Path | None:
     """Run DryAdvection on a single fleet JSON file.
 
@@ -53,9 +54,10 @@ def run_dry_advection(
     parquet file with the same schema as CoCiP output.
 
     Args:
-        fleet_json: Path to the fleet JSON file.  The file stem must follow the
-            ``YYYYMMDDHHMMSS_YYYYMMDDHHMMSS`` naming convention used by the rest
-            of the pipeline.
+        fleet_json: Path to the fleet JSON file.  When ``max_age`` is not
+            provided, the file stem must follow the
+            ``YYYYMMDDHHMMSS_YYYYMMDDHHMMSS`` naming convention so that the
+            simulation duration can be inferred.
         output_dir: Directory to write the output parquet.
         cache_dir: ERA5 disk-cache directory.  Defaults to
             ``output_dir/../met_cache``.
@@ -66,6 +68,9 @@ def run_dry_advection(
             evolved by the wind-shear model at each time step.
         extra_params: Additional ``DryAdvectionParams`` overrides (merged into
             the defaults).
+        met: Pre-loaded MetDataset.  When provided, skips ERA5 download.
+        max_age: Maximum simulation age.  When not provided, inferred from
+            the fleet JSON filename (stop − start).
 
     Returns:
         Path to the output parquet, or ``None`` if DryAdvection produced no
@@ -81,12 +86,13 @@ def run_dry_advection(
     if cache_dir is None:
         cache_dir = output_dir.parent / "met_cache"
 
-    # Parse simulation time window from the filename stem
-    stem = fleet_json.stem
-    start_str, stop_str = stem.split("_")
-    start  = datetime.strptime(start_str, "%Y%m%d%H%M%S")
-    stop   = datetime.strptime(stop_str,  "%Y%m%d%H%M%S")
-    max_age = pd.Timedelta(stop - start)
+    if max_age is None:
+        # Parse simulation time window from the filename stem
+        stem = fleet_json.stem
+        start_str, stop_str = stem.split("_")
+        start  = datetime.strptime(start_str, "%Y%m%d%H%M%S")
+        stop   = datetime.strptime(stop_str,  "%Y%m%d%H%M%S")
+        max_age = pd.Timedelta(stop - start)
 
     output_path = output_dir / fleet_json.with_suffix(".parquet").name
 

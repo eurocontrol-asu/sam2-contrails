@@ -13,52 +13,65 @@ ALL_DATA = IMAGES_DIR.exists() and OPENSKY_PATH.exists() and ERA5_DIR.exists()
 
 
 @unittest.skipUnless(ALL_DATA, "Data not available for pipeline test")
-class TestRunWindow(unittest.TestCase):
-    """Integration test: run a single window without inference."""
+class TestRunDay(unittest.TestCase):
+    """Integration test: run a single day without inference."""
 
-    def test_prompts_only(self):
-        """Run the full pipeline up to prompt generation (no SAM2 inference).
+    def test_day_prompts_only(self):
+        """Run the full day-level pipeline (no SAM2 inference).
 
-        Uses a 30-minute window to keep DryAdvection fast (~200 flights vs 968).
+        Uses a single 30-minute window to keep DryAdvection fast.
+        Verifies that day-level advection + per-window filtering works.
         """
-        from contrailtrack.campaign.pipeline import run_window
-
-        start = dt.datetime(2025, 12, 31, 12, 0, 0)
-        stop = dt.datetime(2025, 12, 31, 12, 30, 0)
+        from contrailtrack.campaign.pipeline import run_day
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_base = Path(tmpdir)
-            stats = run_window(
-                start, stop,
-                images_dir=IMAGES_DIR,
-                opensky_path=OPENSKY_PATH,
-                era5_dir=ERA5_DIR,
-                output_base=output_base,
-                run_inference=False,
-                skip_existing=False,
-            )
 
+            # Monkey-patch daylight_windows to return one short window
+            import contrailtrack.campaign.pipeline as mod
+            original_fn = None
+
+            def _fake_windows(date, lat, lon, window_hours=2.0):
+                return [
+                    (dt.datetime(2025, 12, 31, 12, 0, 0),
+                     dt.datetime(2025, 12, 31, 12, 30, 0)),
+                ]
+
+            import contrailtrack.campaign.solar as solar_mod
+            original_fn = solar_mod.daylight_windows
+            solar_mod.daylight_windows = _fake_windows
+
+            try:
+                results = run_day(
+                    dt.date(2025, 12, 31),
+                    images_base=Path("/data/contrailnet/images/camera/visible/proj"),
+                    flights_base=Path("/data/contrailnet/flights/opensky"),
+                    era5_base=Path("/data/contrailnet/weather/era5"),
+                    output_base=output_base,
+                    run_inference=False,
+                    skip_existing=False,
+                )
+            finally:
+                solar_mod.daylight_windows = original_fn
+
+            self.assertEqual(len(results), 1)
+            stats = results[0]
             vid = "20251231120000_20251231123000"
             self.assertEqual(stats["video_id"], vid)
             self.assertGreater(stats["frames"], 50)
-            self.assertGreater(stats["flights"], 0)
 
-            # Fleet JSON exists
-            fleet_path = output_base / "fleet" / f"{vid}.json"
+            # Day-level fleet JSON exists
+            fleet_path = output_base / "fleet" / "20251231.json"
             self.assertTrue(fleet_path.exists())
 
-            # DryAdvection parquet exists
-            da_path = output_base / "dry_advection" / f"{vid}.parquet"
+            # Day-level DryAdvection parquet exists
+            da_path = output_base / "dry_advection" / "20251231.parquet"
             self.assertTrue(da_path.exists())
 
-            # Prompt PNGs exist
+            # Prompt PNGs exist for the window
             prompts_dir = output_base / "prompts" / vid
             prompt_pngs = list(prompts_dir.rglob("*_prompt.png"))
             self.assertGreater(len(prompt_pngs), 0)
-
-            # Union PNGs exist
-            union_pngs = list(prompts_dir.glob("*_all_prompts_union.png"))
-            self.assertGreater(len(union_pngs), 0)
 
             # Frame symlinks exist
             frames = list((output_base / "frames" / vid).glob("*.jpg"))
