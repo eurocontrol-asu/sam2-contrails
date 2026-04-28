@@ -44,6 +44,7 @@ def run_dry_advection(
     grid: float = 1.0,
     initial_width_m: float = _DEFAULT_INITIAL_WIDTH_M,
     extra_params: dict | None = None,
+    met: "MetDataset | None" = None,
 ) -> Path | None:
     """Run DryAdvection on a single fleet JSON file.
 
@@ -70,8 +71,7 @@ def run_dry_advection(
         Path to the output parquet, or ``None`` if DryAdvection produced no
         output (e.g. all waypoints out of the met domain).
     """
-    from pycontrails import Fleet, Flight, DiskCacheStore
-    from pycontrails.datalib.ecmwf import ERA5ModelLevel
+    from pycontrails import Fleet, Flight
     from pycontrails.models.dry_advection import DryAdvection
 
     fleet_json = Path(fleet_json)
@@ -101,22 +101,26 @@ def run_dry_advection(
     fleet["formation_time"] = fleet["time"]
     fleet["azimuth"] = fleet.segment_azimuth()
 
-    # ERA5 time window: first waypoint → last waypoint + max simulation age
-    t_min = pd.to_datetime(fleet["time"].min()).floor("h")
-    t_max = pd.to_datetime(fleet["time"].max()).ceil("h") + max_age
-    time  = (t_min, t_max)
+    if met is None:
+        from pycontrails import DiskCacheStore
+        from pycontrails.datalib.ecmwf import ERA5ModelLevel
 
-    # ERA5 model-level met — wind fields only (no radiation, no CIWC)
-    cache  = DiskCacheStore(cache_dir=str(cache_dir), allow_clear=True)
-    era5ml = ERA5ModelLevel(
-        time=time,
-        variables=("t", "u", "v", "w"),
-        grid=grid,
-        model_levels=_MODEL_LEVELS,
-        pressure_levels=_PRESSURE_LEVELS,
-        cachestore=cache,
-    )
-    met = era5ml.open_metdataset()
+        # ERA5 time window: first waypoint → last waypoint + max simulation age
+        t_min = pd.to_datetime(fleet["time"].min()).floor("h")
+        t_max = pd.to_datetime(fleet["time"].max()).ceil("h") + max_age
+        time  = (t_min, t_max)
+
+        # ERA5 model-level met — wind fields only (no radiation, no CIWC)
+        cache  = DiskCacheStore(cache_dir=str(cache_dir), allow_clear=True)
+        era5ml = ERA5ModelLevel(
+            time=time,
+            variables=("t", "u", "v", "w"),
+            grid=grid,
+            model_levels=_MODEL_LEVELS,
+            pressure_levels=_PRESSURE_LEVELS,
+            cachestore=cache,
+        )
+        met = era5ml.open_metdataset()
 
     params: dict = {
         "dt_integration": pd.Timedelta(seconds=30),
