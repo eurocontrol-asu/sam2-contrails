@@ -51,6 +51,21 @@ def _video_set(videos: Optional[List[str]]) -> Optional[set]:
     return {v.strip().zfill(5) for v in videos if v.strip()}
 
 
+def _load_flight_mapping(mappings_dir: Path, video_id: str) -> dict | None:
+    """Load {folder_name: flight_id} from {mappings_dir}/{video_id}/flight_mapping.json.
+
+    Returns None if the mapping file doesn't exist.
+    """
+    import json
+    mapping_path = mappings_dir / video_id / "flight_mapping.json"
+    if not mapping_path.exists():
+        return None
+    with open(mapping_path) as f:
+        data = json.load(f)
+    # flight_to_object: {hex_id: int_folder} → invert to {str(folder): hex_id}
+    return {str(v): k for k, v in data.get("flight_to_object", {}).items()}
+
+
 def _resolve_fleet_files(
     fleet_dir: Path,
     annotations: Optional[Path],
@@ -98,6 +113,7 @@ def _run_single(
     object_batch_size: Optional[int],
     labels: Optional[Path],
     eval_out: Optional[Path],
+    flight_mappings: Optional[Path] = None,
 ):
     from contrailtrack.model.loader import load_model
     from contrailtrack.data.video import load_frames
@@ -116,6 +132,15 @@ def _run_single(
 
     log.info("reading_prompts", encoding=encoding)
     prompt_data = read_prompts(prompts, video_id, encoding=encoding)
+
+    if flight_mappings is not None:
+        obj_to_flight = _load_flight_mapping(flight_mappings, video_id)
+        if obj_to_flight:
+            prompt_data = {obj_to_flight.get(k, k): v for k, v in prompt_data.items()}
+            log.info("flight_mapping_applied", video_id=video_id, n_mapped=len(obj_to_flight))
+        else:
+            log.warning("flight_mapping_not_found", video_id=video_id, mappings_dir=str(flight_mappings))
+
     log.info("prompts_loaded", n_objects=len(prompt_data))
 
     log.info("running_inference")
@@ -441,6 +466,13 @@ def run(
     eval_out: Optional[Path] = typer.Option(
         None, help="Directory to write evaluation results."
     ),
+    flight_mappings: Optional[Path] = typer.Option(
+        None,
+        help="Root of the prompts directory tree that contains per-video "
+             "flight_mapping.json files (e.g. per_object_data_age_5/). "
+             "When provided, integer prompt-folder names are remapped to "
+             "flight IDs in the output predictions.",
+    ),
 ):
     """Run SAM2 contrail inference on one video or an entire directory.
 
@@ -474,6 +506,7 @@ def run(
             max_propagation_frames=max_propagation_frames,
             object_batch_size=object_batch_size,
             labels=labels, eval_out=eval_out,
+            flight_mappings=flight_mappings,
         )
     else:
         out.mkdir(parents=True, exist_ok=True)
@@ -499,6 +532,7 @@ def run(
                 object_batch_size=object_batch_size,
                 labels=labels,
                 eval_out=(eval_out / video_dir.name) if eval_out else None,
+                flight_mappings=flight_mappings,
             )
 
 
@@ -609,6 +643,13 @@ def evaluate_dataset_cmd(
         0.25, help="IoU threshold for tracking/attribution matching."
     ),
     skip_segmentation: bool = typer.Option(False, help="Skip slow COCO mAP computation."),
+    flight_mappings: Optional[Path] = typer.Option(
+        None,
+        help="Root of the prompts directory tree that contains per-video "
+             "flight_mapping.json files (e.g. per_object_data_age_5/). "
+             "When provided, GT is filtered to only flights that have prompts, "
+             "matching the evaluation scope used during model development.",
+    ),
 ):
     """Evaluate all videos with true dataset-wide metrics.
 
@@ -659,6 +700,49 @@ def evaluate_dataset_cmd(
 
     # Load the full dataset GT once (no video filter)
     coco_gt = _load_gt(labels, video_name=None)
+
+    if flight_mappings is not None:
+        # Filter GT to only flights that have prompts (matches original eval scope).
+        # Two layouts are supported:
+        #   1. {video_id}/flight_mapping.json  (integer-named prompt folders)
+        #   2. {video_id}/{flight_id}/         (flight_id-named prompt folders, output of
+        #                                       generate-prompts — no mapping file needed)
+        prompted_fids = set()
+        for vid_dir in sorted(flight_mappings.iterdir()):
+            if not vid_dir.is_dir():
+                continue
+            mf = vid_dir / "flight_mapping.json"
+            if mf.exists():
+                m = json.load(open(mf))
+                prompted_fids.update(m.get("flight_to_object", {}).keys())
+            else:
+                # Hex-named subdirectories are flight IDs directly
+                for sub in vid_dir.iterdir():
+                    if sub.is_dir():
+                        prompted_fids.add(sub.name)
+        if prompted_fids:
+            import io as _io
+            from contextlib import redirect_stdout as _redir
+            from pycocotools.coco import COCO as _COCO
+            filtered_anns = [
+                a for a in coco_gt.dataset["annotations"]
+                if a.get("flight_id") in prompted_fids
+            ]
+            filtered_coco = _COCO()
+            with _redir(_io.StringIO()):
+                filtered_coco.dataset = {
+                    "info": {}, "licenses": [],
+                    "videos": coco_gt.dataset.get("videos", []),
+                    "images": coco_gt.dataset["images"],
+                    "categories": coco_gt.dataset["categories"],
+                    "annotations": filtered_anns,
+                }
+                filtered_coco.createIndex()
+            coco_gt = filtered_coco
+            log.info("gt_filtered_to_prompted_flights",
+                     n_prompted_flights=len(prompted_fids),
+                     n_gt_annotations=len(filtered_anns))
+
     log.info("evaluate_dataset", n_videos=len(pred_files))
 
     # Pool all predictions across all videos into one list
