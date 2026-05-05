@@ -155,138 +155,343 @@ def _evaluate_segmentation(coco_gt: COCO, coco_results: list[dict], iou_threshol
     }
 
 
+def _rle_from_ann(ann: dict, coco_gt: COCO) -> dict:
+    """Return a bytes-counts RLE for a GT annotation (handles polygon or RLE input)."""
+    seg = ann["segmentation"]
+    if isinstance(seg, list):
+        img = coco_gt.imgs[ann["image_id"]]
+        rle = mask_utils.merge(mask_utils.frPyObjects(seg, img["height"], img["width"]))
+    else:
+        rle = dict(seg)
+    if isinstance(rle.get("counts"), str):
+        rle["counts"] = rle["counts"].encode("utf-8")
+    return rle
+
+
+def _rle_bytes(rle: dict) -> dict:
+    """Ensure RLE counts field is bytes (required by mask_utils.iou)."""
+    if isinstance(rle.get("counts"), str):
+        rle = dict(rle)
+        rle["counts"] = rle["counts"].encode("utf-8")
+    return rle
+
+
 def _evaluate_tracking(coco_gt: COCO, coco_results: list[dict], iou_threshold: float) -> dict:
-    """Evaluate tracking: detection rate, completeness, temporal IoU per flight."""
+    """Evaluate tracking with spatial IoU matching (GT-centric, decoupled from attribution).
+
+    For each GT flight, find the best-matching prediction at each frame purely by
+    spatial IoU (any prediction regardless of its flight_id label). This separates
+    tracking quality from attribution quality.
+
+    Per-flight fields match the legacy evaluate_tracking_unified output:
+    ``num_frames``, ``detected_frames``, ``completeness``, ``temporal_iou``
+    (mean spatial IoU over detected frames), ``mean_score``, ``fragmentation``
+    (number of distinct prediction IDs used), ``pred_frames_outside_gt``,
+    ``max_detection_gap``, ``pred_ids_used``.
+    """
     if not coco_results:
         return {"metrics": {}, "per_flight": []}
 
-    # Group GT annotations by flight_id
-    gt_by_flight = {}
+    # GT: flight_id -> {image_id: [annotations]}
+    gt_by_flight: dict[str, dict[int, list]] = {}
     for ann in coco_gt.dataset["annotations"]:
         fid = ann.get("flight_id")
         if fid:
-            gt_by_flight.setdefault(fid, []).append(ann)
+            gt_by_flight.setdefault(fid, {}).setdefault(ann["image_id"], []).append(ann)
 
-    # Group predictions by flight_id
-    pred_by_flight = {}
+    # Predictions indexed by image_id for per-frame spatial search
+    pred_by_image: dict[int, list] = {}
+    for r in coco_results:
+        pred_by_image.setdefault(r["image_id"], []).append(r)
+
+    # Prediction image_ids per flight_id (for pred_frames_outside_gt)
+    pred_img_ids_by_flight: dict[str, set] = {}
     for r in coco_results:
         fid = r.get("_flight_id")
         if fid:
-            pred_by_flight.setdefault(fid, []).append(r)
+            pred_img_ids_by_flight.setdefault(fid, set()).add(r["image_id"])
 
     per_flight = []
-    for fid, gt_anns in gt_by_flight.items():
-        gt_img_ids = {a["image_id"] for a in gt_anns}
-        pred_anns = pred_by_flight.get(fid, [])
-        pred_img_ids = {r["image_id"] for r in pred_anns}
+    for flight_id, frame_anns in gt_by_flight.items():
+        gt_image_ids = set(frame_anns.keys())
+        num_frames = len(gt_image_ids)
 
-        # Check IoU overlap on matched frames
-        matched_frames = 0
-        for img_id in gt_img_ids & pred_img_ids:
-            gt_masks = [a for a in gt_anns if a["image_id"] == img_id]
-            pr_masks = [r for r in pred_anns if r["image_id"] == img_id]
-            if gt_masks and pr_masks:
-                gt_rle = gt_masks[0]["segmentation"]
-                pr_rle = pr_masks[0]["segmentation"]
-                if isinstance(gt_rle, list):
-                    gt_rle = mask_utils.merge(mask_utils.frPyObjects(gt_rle, 1024, 1024))
-                if isinstance(gt_rle.get("counts"), str):
-                    gt_rle["counts"] = gt_rle["counts"].encode("utf-8")
-                iou = mask_utils.iou([pr_rle], [gt_rle], [0])[0][0]
-                if iou >= iou_threshold:
-                    matched_frames += 1
+        detected_frames = 0
+        total_iou = 0.0
+        total_score = 0.0
+        pred_ids_used: set[str] = set()
+        best_matches = []
 
-        completeness = matched_frames / len(gt_img_ids) if gt_img_ids else 0.0
-        detected = matched_frames > 0
+        for image_id in sorted(frame_anns.keys()):
+            anns = frame_anns[image_id]
 
-        # Temporal IoU
-        if gt_img_ids and pred_img_ids:
-            intersection = len(gt_img_ids & pred_img_ids)
-            union = len(gt_img_ids | pred_img_ids)
-            tiou = intersection / union
-        else:
-            tiou = 0.0
+            # Merge all GT masks for this flight at this frame into one RLE
+            if len(anns) == 1:
+                gt_rle = _rle_from_ann(anns[0], coco_gt)
+            else:
+                gt_rle = mask_utils.merge([_rle_from_ann(a, coco_gt) for a in anns])
+
+            # Find best-matching prediction by spatial IoU (any prediction)
+            preds_at_frame = pred_by_image.get(image_id, [])
+            best_iou = 0.0
+            best_pred_fid = None
+            best_score = None
+
+            if preds_at_frame:
+                pr_rles = [_rle_bytes(r["segmentation"]) for r in preds_at_frame]
+                ious = mask_utils.iou(pr_rles, [gt_rle], [0])  # shape (n_pred, 1)
+                best_idx = int(np.argmax(ious[:, 0]))
+                best_iou = float(ious[best_idx, 0])
+                best_pred_fid = preds_at_frame[best_idx].get("_flight_id")
+                best_score = preds_at_frame[best_idx].get("_score")
+
+            if best_iou >= iou_threshold:
+                detected_frames += 1
+                total_iou += best_iou
+                if best_score is not None:
+                    total_score += best_score
+                if best_pred_fid is not None:
+                    pred_ids_used.add(best_pred_fid)
+                best_matches.append({"image_id": image_id, "detected": True, "iou": best_iou})
+            else:
+                best_matches.append({"image_id": image_id, "detected": False, "iou": best_iou})
+
+        completeness = detected_frames / num_frames if num_frames > 0 else 0.0
+        # temporal_iou: mean spatial IoU over detected frames (not frame-set overlap)
+        temporal_iou = total_iou / detected_frames if detected_frames > 0 else 0.0
+        mean_score = total_score / detected_frames if detected_frames > 0 else 0.0
+        fragmentation = len(pred_ids_used)
+
+        pred_frames_outside_gt = len(
+            pred_img_ids_by_flight.get(flight_id, set()) - gt_image_ids
+        )
+
+        max_gap = 0
+        current_gap = 0
+        for m in best_matches:
+            if not m["detected"]:
+                current_gap += 1
+                max_gap = max(max_gap, current_gap)
+            else:
+                current_gap = 0
 
         per_flight.append({
-            "flight_id": fid,
-            "gt_frames": len(gt_img_ids),
-            "pred_frames": len(pred_img_ids),
-            "matched_frames": matched_frames,
+            "flight_id": flight_id,
+            "num_frames": num_frames,
+            "detected_frames": detected_frames,
             "completeness": completeness,
-            "tiou": tiou,
-            "detected": detected,
+            "temporal_iou": temporal_iou,
+            "mean_score": mean_score,
+            "fragmentation": fragmentation,
+            "pred_frames_outside_gt": pred_frames_outside_gt,
+            "max_detection_gap": max_gap,
+            "pred_ids_used": sorted(pred_ids_used),
         })
 
     n = len(per_flight)
+    detected = [f for f in per_flight if f["detected_frames"] > 0]
     metrics = {
         "n_flights": n,
-        "detection_rate": sum(f["detected"] for f in per_flight) / n if n else 0.0,
-        "mean_completeness": np.mean([f["completeness"] for f in per_flight]) if n else 0.0,
-        "mean_tiou": np.mean([f["tiou"] for f in per_flight]) if n else 0.0,
+        "detection_rate": len(detected) / n if n else 0.0,
+        "mean_completeness": float(np.mean([f["completeness"] for f in per_flight])) if n else 0.0,
+        "mean_tiou": float(np.mean([f["temporal_iou"] for f in per_flight])) if n else 0.0,
+        "mean_fragmentation": float(np.mean([f["fragmentation"] for f in per_flight])) if n else 0.0,
+        "iou_threshold": iou_threshold,
     }
 
     return {"metrics": metrics, "per_flight": per_flight}
 
 
 def _evaluate_attribution(coco_gt: COCO, coco_results: list[dict], iou_threshold: float) -> dict:
-    """Evaluate attribution: is each prediction assigned to the correct flight?"""
-    if not coco_results:
-        return {"metrics": {}, "per_prediction": []}
+    """Evaluate attribution using greedy per-frame IoU matching.
 
-    # Build GT lookup: image_id → {flight_id: rle_mask}
-    gt_lookup = {}
+    At each frame, greedily matches predictions to GT annotations by highest IoU
+    (above threshold), then classifies each match by outcome:
+
+    - ``correct_attribution``: pred and GT share the same flight_id
+    - ``wrong_attribution``: pred flight_id != GT flight_id (both are new contrails)
+    - ``false_attribution``: pred has a flight_id but GT is an old contrail (no flight_id)
+    - ``missed_attribution``: GT is a new contrail but pred has no flight_id
+    - ``correct_omission``: GT is an old contrail and pred has no flight_id
+
+    Metrics reported are the per-prediction attribution precision and recall
+    (matching the legacy evaluate_attribution_unified methodology).
+    """
+    if not coco_results:
+        return {"metrics": {}, "per_prediction": [], "first_frame_attribution": {}}
+
+    from collections import defaultdict
+
+    # Index GT and predictions by image_id
+    gt_by_image: dict[int, list] = defaultdict(list)
     for ann in coco_gt.dataset["annotations"]:
-        fid = ann.get("flight_id")
-        if not fid:
-            continue
-        img_id = ann["image_id"]
-        seg = ann["segmentation"]
-        if isinstance(seg, list):
-            seg = mask_utils.merge(mask_utils.frPyObjects(seg, 1024, 1024))
-        if isinstance(seg.get("counts"), str):
-            seg["counts"] = seg["counts"].encode("utf-8")
-        gt_lookup.setdefault(img_id, {})[fid] = seg
+        gt_by_image[ann["image_id"]].append(ann)
+
+    pred_by_image: dict[int, list] = defaultdict(list)
+    for r in coco_results:
+        pred_by_image[r["image_id"]].append(r)
+
+    all_image_ids = set(pred_by_image) | set(gt_by_image)
 
     per_prediction = []
-    for r in coco_results:
-        img_id = r["image_id"]
-        pred_fid = r.get("_flight_id")
-        pred_rle = r["segmentation"]
+    counters = dict(
+        correct_attribution=0, wrong_attribution=0,
+        false_attribution=0, missed_attribution=0,
+        correct_omission=0, unmatched_predictions=0,
+        unmatched_gt_new=0, unmatched_gt_old=0,
+    )
 
-        gt_at_frame = gt_lookup.get(img_id, {})
-        if not gt_at_frame:
-            per_prediction.append({"flight_id": pred_fid, "image_id": img_id, "correct": None, "best_iou": 0.0})
+    for image_id in all_image_ids:
+        preds = pred_by_image.get(image_id, [])
+        gt_anns = gt_by_image.get(image_id, [])
+
+        if not preds or not gt_anns:
+            for pred in preds:
+                counters["unmatched_predictions"] += 1
+                per_prediction.append({
+                    "image_id": image_id,
+                    "pred_flight_id": pred.get("_flight_id"),
+                    "score": pred.get("_score"),
+                    "outcome": "unmatched_prediction",
+                    "matched_gt_flight": None,
+                    "iou": 0.0,
+                })
+            for ann in gt_anns:
+                if ann.get("flight_id"):
+                    counters["unmatched_gt_new"] += 1
+                else:
+                    counters["unmatched_gt_old"] += 1
             continue
 
-        # Find best matching GT flight
-        best_iou = 0.0
-        best_fid = None
-        for gt_fid, gt_rle in gt_at_frame.items():
-            iou = mask_utils.iou([pred_rle], [gt_rle], [0])[0][0]
-            if iou > best_iou:
-                best_iou = iou
-                best_fid = gt_fid
+        # Build RLE arrays
+        pr_rles = [_rle_bytes(r["segmentation"]) for r in preds]
+        gt_rles = [_rle_from_ann(a, coco_gt) for a in gt_anns]
 
-        correct = (best_fid == pred_fid) if best_iou >= iou_threshold else None
+        iou_matrix = mask_utils.iou(pr_rles, gt_rles, [0] * len(gt_rles))
 
-        per_prediction.append({
-            "flight_id": pred_fid,
-            "image_id": img_id,
-            "correct": correct,
-            "best_iou": float(best_iou),
-            "matched_gt_flight": best_fid,
-        })
+        matched_preds: set[int] = set()
+        matched_gts: set[int] = set()
 
-    assessed = [p for p in per_prediction if p["correct"] is not None]
-    n_correct = sum(1 for p in assessed if p["correct"])
+        # Greedy matching: highest IoU first
+        while True:
+            best_val = 0.0
+            best_pair = None
+            for i in range(len(preds)):
+                if i in matched_preds:
+                    continue
+                for j in range(len(gt_anns)):
+                    if j in matched_gts:
+                        continue
+                    if iou_matrix[i, j] > best_val:
+                        best_val = iou_matrix[i, j]
+                        best_pair = (i, j)
+            if best_pair is None or best_val < iou_threshold:
+                break
+
+            i, j = best_pair
+            matched_preds.add(i)
+            matched_gts.add(j)
+
+            pred_fid = preds[i].get("_flight_id")
+            gt_fid = gt_anns[j].get("flight_id")
+
+            if pred_fid:
+                if gt_fid:
+                    outcome = "correct_attribution" if pred_fid == gt_fid else "wrong_attribution"
+                else:
+                    outcome = "false_attribution"
+            else:
+                outcome = "missed_attribution" if gt_fid else "correct_omission"
+
+            counters[outcome] += 1
+            per_prediction.append({
+                "image_id": image_id,
+                "pred_flight_id": pred_fid,
+                "score": preds[i].get("_score"),
+                "outcome": outcome,
+                "matched_gt_flight": gt_fid,
+                "iou": float(best_val),
+            })
+
+        for i in range(len(preds)):
+            if i not in matched_preds:
+                counters["unmatched_predictions"] += 1
+                per_prediction.append({
+                    "image_id": image_id,
+                    "pred_flight_id": preds[i].get("_flight_id"),
+                    "score": preds[i].get("_score"),
+                    "outcome": "unmatched_prediction",
+                    "matched_gt_flight": None,
+                    "iou": 0.0,
+                })
+        for j in range(len(gt_anns)):
+            if j not in matched_gts:
+                if gt_anns[j].get("flight_id"):
+                    counters["unmatched_gt_new"] += 1
+                else:
+                    counters["unmatched_gt_old"] += 1
+
+    ca = counters["correct_attribution"]
+    wa = counters["wrong_attribution"]
+    fa = counters["false_attribution"]
+    ma = counters["missed_attribution"]
+    co = counters["correct_omission"]
+    un_new = counters["unmatched_gt_new"]
+    un_old = counters["unmatched_gt_old"]
+
+    total_attributed = ca + wa + fa
+    total_new_gt = ca + wa + ma + un_new
+    total_old_gt = fa + co + un_old
+
     metrics = {
-        "n_predictions": len(per_prediction),
-        "n_assessed": len(assessed),
-        "n_correct": n_correct,
-        "attribution_precision": n_correct / len(assessed) if assessed else 0.0,
+        "attribution_precision": ca / total_attributed if total_attributed > 0 else 0.0,
+        "attribution_recall": ca / total_new_gt if total_new_gt > 0 else 0.0,
+        "wrong_attribution_rate": wa / total_attributed if total_attributed > 0 else 0.0,
+        "false_attribution_rate": fa / total_attributed if total_attributed > 0 else 0.0,
+        "missed_attribution_rate": (ma + un_new) / total_new_gt if total_new_gt > 0 else 0.0,
+        "correct_omission_rate": (co + un_old) / total_old_gt if total_old_gt > 0 else 0.0,
+        "iou_threshold": iou_threshold,
+        **{k: v for k, v in counters.items()},
+        "total_attributed_predictions": total_attributed,
+        "total_new_gt": total_new_gt,
+        "total_old_gt": total_old_gt,
     }
 
-    return {"metrics": metrics, "per_prediction": per_prediction}
+    # First-frame attribution: check attribution on the first frame each GT flight is matched
+    total_gt_flights = len(
+        {a.get("flight_id") for a in coco_gt.dataset["annotations"] if a.get("flight_id")}
+    )
+    matched_rows = [r for r in per_prediction if r.get("matched_gt_flight") is not None]
+    first_by_flight: dict[str, dict] = {}
+    for row in matched_rows:
+        fid = row["matched_gt_flight"]
+        if fid is None:
+            continue
+        if fid not in first_by_flight or row["image_id"] < first_by_flight[fid]["image_id"]:
+            first_by_flight[fid] = row
+
+    ff_rows = list(first_by_flight.values())
+    ff_correct = sum(1 for r in ff_rows if r["outcome"] == "correct_attribution")
+    ff_wrong = sum(1 for r in ff_rows if r["outcome"] == "wrong_attribution")
+    ff_false = sum(1 for r in ff_rows if r["outcome"] == "false_attribution")
+    ff_attributed = ff_correct + ff_wrong + ff_false
+
+    first_frame_attribution = {
+        "total_gt_flights": total_gt_flights,
+        "flights_matched_at_least_once": len(first_by_flight),
+        "flights_never_matched": total_gt_flights - len(first_by_flight),
+        "metrics": {
+            "attribution_precision": ff_correct / ff_attributed if ff_attributed > 0 else 0.0,
+            "attribution_recall": ff_correct / total_gt_flights if total_gt_flights > 0 else 0.0,
+            "detection_rate": len(first_by_flight) / total_gt_flights if total_gt_flights > 0 else 0.0,
+        },
+    }
+
+    return {
+        "metrics": metrics,
+        "per_prediction": per_prediction,
+        "first_frame_attribution": first_frame_attribution,
+    }
 
 
 def evaluate(

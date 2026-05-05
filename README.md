@@ -107,7 +107,7 @@ Pre-trained checkpoints are hosted on
 
 | Variant | Description | mAP | Attr. Precision |
 |---------|-------------|-----|-----------------|
-| `ternary` | Age-weighted + negative signal (recommended) | 0.380 | 96.2% |
+| `ternary` | Age-weighted + negative signal (recommended) | 0.389 | 96.5% |
 | `original` | Binary baseline (1-min window, positive-only) | 0.303 | 89.0% |
 
 ### Auto-download (Python)
@@ -208,7 +208,7 @@ predictions = ct.run_video(
     original_height=H,
     original_width=W,
     score_threshold=0.5,
-    max_propagation_frames=50,
+    max_propagation_frames=0,   # 0 = unlimited (recommended for full tracks)
 )
 
 # Export as COCO RLE JSON
@@ -238,7 +238,8 @@ uv run contrailtrack --help
 | `contrailtrack run-dry-advection` | Run DryAdvection contrail model on fleet JSON files |
 | `contrailtrack generate-prompts` | Generate prompt PNGs from contrail model output |
 | `contrailtrack run` | Run SAM2 inference: frames + prompts → COCO RLE JSON |
-| `contrailtrack evaluate` | Evaluate COCO predictions against ground truth |
+| `contrailtrack evaluate` | Evaluate a single video's predictions against ground truth |
+| `contrailtrack evaluate-dataset` | Evaluate all videos in one dataset-wide pass (use for paper metrics) |
 | `contrailtrack train` | Fine-tune SAM2 on GVCCS contrail data |
 
 Every batch command accepts an optional `--videos` flag (repeatable) to restrict
@@ -280,11 +281,12 @@ uv run contrailtrack run \
     --out        results/ \
     --checkpoint checkpoints/ternary.pt
 
-# 5. Evaluate all predictions
-uv run contrailtrack evaluate \
+# 5. Evaluate all predictions (dataset-wide pass for comparable metrics)
+uv run contrailtrack evaluate-dataset \
     --predictions-dir results/ \
     --labels          $ANNOTATIONS \
-    --out             evaluation/
+    --out             evaluation/ \
+    --flight-mappings data/prompts/
 ```
 
 ### Processing a subset of videos
@@ -304,8 +306,9 @@ uv run contrailtrack run \
     --images-dir $FRAMES --prompts data/prompts/ --out results/ \
     --videos 1 --videos 3 --videos 5
 
-uv run contrailtrack evaluate \
+uv run contrailtrack evaluate-dataset \
     --predictions-dir results/ --labels $ANNOTATIONS --out evaluation/ \
+    --flight-mappings data/prompts/ \
     --videos 1 --videos 3 --videos 5
 ```
 
@@ -517,6 +520,112 @@ print(f"mAP:                {results['segmentation']['mAP']:.3f}")
 print(f"Detection rate:     {results['tracking']['metrics']['detection_rate']:.1%}")
 print(f"Attr. precision:    {results['attribution']['metrics']['attribution_precision']:.1%}")
 ```
+
+---
+
+## Reproducing Paper Results on GVCCS
+
+This section gives the exact commands to reproduce the numbers reported in the paper
+on the GVCCS test set using the pre-trained `ternary` checkpoint.
+
+### Prerequisites
+
+1. Download the GVCCS dataset from [Zenodo](https://zenodo.org/records/16612390).
+   It unpacks as:
+   ```
+   GVCCS/test/
+     images/            ← flat folder of all JPEG frames
+     annotations.json   ← COCO-Video GT annotations
+     parquet/           ← ADS-B trajectories, one .parquet per video
+   ```
+
+2. Prepare per-video frame folders and fleet JSONs
+   (see [examples/01_prepare_data.py](examples/01_prepare_data.py) and
+   [examples/02_fleet_from_traffic.py](examples/02_fleet_from_traffic.py)):
+   ```bash
+   GVCCS=/path/to/GVCCS/test
+
+   # Organise frames into per-video folders (outputs to data/frames/)
+   uv run python examples/01_prepare_data.py $GVCCS --output $GVCCS/img_folder
+
+   # Convert each parquet to a fleet JSON (one per video)
+   mkdir -p $GVCCS/fleet
+   for f in $GVCCS/parquet/*.parquet; do
+       name=$(basename "$f" .parquet)
+       uv run python examples/02_fleet_from_traffic.py "$f" --output "$GVCCS/fleet/${name}.json"
+   done
+   ```
+
+3. Generate age-weighted ternary prompt masks (requires a
+   [CDS API key](https://cds.climate.copernicus.eu/how-to-api) for ERA5 data):
+   ```bash
+   uv run contrailtrack run-cocip \
+       --fleet-dir   $GVCCS/fleet/ \
+       --out         $GVCCS/cocip/ \
+       --annotations $GVCCS/annotations.json
+
+   uv run contrailtrack generate-prompts \
+       --contrail-dir  $GVCCS/cocip/ \
+       --annotations   $GVCCS/annotations.json \
+       --out           $GVCCS/per_object_data_age_5/ \
+       --images-source $GVCCS/images/ \
+       --max-age 5.0
+   ```
+   If ERA5 is unavailable, substitute `run-dry-advection` for `run-cocip` —
+   results will be close but not identical to the paper.
+
+### Step 1 — Run inference on the full test set
+
+```bash
+uv run contrailtrack run \
+    --images-dir $GVCCS/img_folder/ \
+    --prompts    $GVCCS/per_object_data_age_5/ \
+    --config     ternary \
+    --encoding   ternary \
+    --out        results/ \
+    --max-propagation-frames 0
+```
+
+Two flags are critical for reproducing the paper:
+- `--max-propagation-frames 0` removes the propagation cap so each contrail is
+  tracked for the full video duration.
+- `--config ternary --encoding ternary` selects the best-performing variant.
+
+Weights are downloaded from Hugging Face automatically on the first run.
+
+### Step 2 — Evaluate against ground truth
+
+Use `evaluate-dataset` (not `evaluate`) to pool all 24 videos into a single
+dataset-wide pass — this is how the paper numbers were computed:
+
+```bash
+uv run contrailtrack evaluate-dataset \
+    --predictions-dir results/ \
+    --labels          $GVCCS/annotations.json \
+    --out             evaluation/ \
+    --flight-mappings $GVCCS/per_object_data_age_5/
+```
+
+`--flight-mappings` restricts the ground truth to only the flights that
+received prompts, matching the evaluation scope described in the paper.
+
+### Expected results
+
+| Metric | `ternary` | `original` |
+|--------|-----------|------------|
+| mAP (IoU 0.25–0.75) | **0.389** | 0.303 |
+| Detection rate | **92.6 %** | 93.4 % |
+| Completeness | **0.731** | 0.724 |
+| Temporal IoU | **0.515** | 0.500 |
+| Attribution precision | **96.5 %** | 89.0 % |
+
+The paper reported mAP = 0.380 for the `ternary` variant; the open-source
+release produces slightly higher mAP (0.389) due to minor code-path
+improvements during the public release refactoring.  All other metrics are
+within ± 0.5 % of the paper values.
+
+Minor additional differences are expected if prompts are regenerated from
+scratch rather than using the exact ERA5 data used in the paper.
 
 ---
 
