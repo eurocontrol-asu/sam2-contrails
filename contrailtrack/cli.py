@@ -114,6 +114,7 @@ def _run_single(
     labels: Optional[Path],
     eval_out: Optional[Path],
     flight_mappings: Optional[Path] = None,
+    max_negative_only_frames: Optional[int] = None,
 ):
     from contrailtrack.model.loader import load_model
     from contrailtrack.data.video import load_frames
@@ -130,8 +131,11 @@ def _run_single(
     frames, frame_names, orig_h, orig_w = load_frames(images, image_size=model.image_size)
     log.info("frames_loaded", n_frames=len(frame_names), resolution=f"{orig_w}x{orig_h}")
 
-    log.info("reading_prompts", encoding=encoding)
-    prompt_data = read_prompts(prompts, video_id, encoding=encoding)
+    log.info("reading_prompts", encoding=encoding, max_negative_only_frames=max_negative_only_frames)
+    prompt_data = read_prompts(
+        prompts, video_id, encoding=encoding,
+        max_negative_only_frames=max_negative_only_frames,
+    )
 
     if flight_mappings is not None:
         obj_to_flight = _load_flight_mapping(flight_mappings, video_id)
@@ -460,6 +464,11 @@ def run(
         50, help="Max frames to propagate after last prompt (0 = unlimited)."
     ),
     object_batch_size: Optional[int] = typer.Option(None, help="Objects per batch."),
+    max_negative_only_frames: Optional[int] = typer.Option(
+        None,
+        help="Max negative-only (-union) frames per object after its last positive prompt "
+             "(ternary encoding only). Caps RAM usage. None = unlimited.",
+    ),
     labels: Optional[Path] = typer.Option(
         None, help="GT annotations.json — triggers evaluation if provided."
     ),
@@ -507,6 +516,7 @@ def run(
             object_batch_size=object_batch_size,
             labels=labels, eval_out=eval_out,
             flight_mappings=flight_mappings,
+            max_negative_only_frames=max_negative_only_frames,
         )
     else:
         out.mkdir(parents=True, exist_ok=True)
@@ -533,6 +543,7 @@ def run(
                 labels=labels,
                 eval_out=(eval_out / video_dir.name) if eval_out else None,
                 flight_mappings=flight_mappings,
+                max_negative_only_frames=max_negative_only_frames,
             )
 
 

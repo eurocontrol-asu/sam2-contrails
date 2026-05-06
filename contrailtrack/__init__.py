@@ -4,7 +4,7 @@ __version__ = "0.1.0"
 
 from contrailtrack.model.loader import load_model, list_configs
 from contrailtrack.data.video import load_frames
-from contrailtrack.data.prompt_reader import read_prompts, list_objects
+from contrailtrack.data.prompt_reader import read_prompts, list_objects, load_union_frames
 from contrailtrack.inference.predictor import run_video
 from contrailtrack.output.coco import encode_rle, export_coco_json, export_prompts_coco_json
 from contrailtrack.eval.metrics import evaluate, evaluate_segmentation, evaluate_tracking, evaluate_attribution  # noqa: F401
@@ -17,6 +17,7 @@ __all__ = [
     "load_frames",
     "read_prompts",
     "list_objects",
+    "load_union_frames",
     "run_video",
     "encode_rle",
     "export_coco_json",

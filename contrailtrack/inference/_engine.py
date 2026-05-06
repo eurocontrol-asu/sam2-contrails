@@ -186,6 +186,10 @@ def dense_prompt_inference_multi_object(
                         align_corners=False,
                     )
 
+                # Negative-only prompt: all values <= 0 (no positive region for this object).
+                # Treated as a suppression signal — allow score-based retirement.
+                is_negative_only = mask_tensor.max().item() <= 0.0
+
                 current_out = model.track_step(
                     frame_idx=frame_idx,
                     is_init_cond_frame=True,
@@ -201,9 +205,11 @@ def dense_prompt_inference_multi_object(
                 )
 
                 output_dicts[obj_id]["cond_frame_outputs"][frame_idx] = current_out
-                obj_propagation_count[obj_id] = 0
+                if not is_negative_only:
+                    obj_propagation_count[obj_id] = 0
 
             else:
+                is_negative_only = False
                 current_out = model.track_step(
                     frame_idx=frame_idx,
                     is_init_cond_frame=False,
@@ -235,12 +241,17 @@ def dense_prompt_inference_multi_object(
 
             predictions[frame_idx][obj_id] = {"mask": mask, "score": obj_score_prob}
 
-            if not has_prompt and propagation_enabled:
+            if propagation_enabled:
                 should_retire = False
-                if score_threshold > 0 and obj_score_prob < score_threshold:
+                # Retire on score: fires on propagation frames and negative-only
+                # conditioning frames. Never fires on positive conditioning frames
+                # (object is explicitly asserted present).
+                score_retirement_eligible = not has_prompt or is_negative_only
+                if score_threshold > 0 and score_retirement_eligible and obj_score_prob < score_threshold:
                     should_retire = True
                 if (
-                    max_propagation_frames > 0
+                    not has_prompt
+                    and max_propagation_frames > 0
                     and obj_propagation_count[obj_id] >= max_propagation_frames
                 ):
                     should_retire = True

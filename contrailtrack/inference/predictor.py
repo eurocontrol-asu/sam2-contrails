@@ -11,13 +11,15 @@ def run_video(
     model,
     frames,
     frame_names: list,
-    prompts: dict,
+    prompts: dict | None = None,
     original_height: int = None,
     original_width: int = None,
     score_threshold: float = 0.5,
     max_propagation_frames: int = 0,
     object_batch_size: int = None,
     device: str = "cuda",
+    prompts_loader=None,
+    all_obj_ids: list | None = None,
 ) -> dict:
     """Run dense-prompt inference on a video.
 
@@ -26,6 +28,7 @@ def run_video(
         frames: float32 tensor [T, 3, H, H] from load_frames().
         frame_names: list of frame name strings (no extension), same order as frames.
         prompts: {obj_id: {frame_name: np.ndarray}} from read_prompts().
+            Mutually exclusive with ``prompts_loader``.
         original_height: Original video height in pixels (from load_frames(); used to
                          resize output masks back to native resolution).
         original_width: Original video width in pixels (from load_frames()).
@@ -33,6 +36,13 @@ def run_video(
         max_propagation_frames: Max frames to propagate after last prompt (0 = disabled).
         object_batch_size: Process objects in batches to save GPU memory (None = all at once).
         device: "cuda" or "cpu".
+        prompts_loader: Optional callable ``(obj_ids: list) -> dict`` that loads prompts
+            for a subset of objects on demand. When provided, ``all_obj_ids`` must also be
+            given. Prompts are loaded one batch at a time instead of all upfront, which
+            avoids loading the full prompt dataset into RAM for large videos.
+            Mutually exclusive with ``prompts``.
+        all_obj_ids: Complete list of object IDs to process. Required when
+            ``prompts_loader`` is provided; ignored otherwise.
 
     Returns:
         {frame_idx (int): {obj_id (int): {"mask": np.ndarray bool [H,W], "score": float}}}
@@ -44,8 +54,57 @@ def run_video(
         original_height = original_height or h
         original_width = original_width or w
 
-    # Build {obj_id: {frame_idx: mask}} required by dense_prompt_inference_multi_object
     name_to_idx = {name: idx for idx, name in enumerate(frame_names)}
+
+    # ── Lazy-loading path (new) ───────────────────────────────────────────────
+    if prompts_loader is not None:
+        if all_obj_ids is None:
+            raise ValueError("all_obj_ids is required when prompts_loader is provided")
+        if object_batch_size is None:
+            raise ValueError("object_batch_size is required when prompts_loader is provided")
+
+        if not all_obj_ids:
+            return {}
+
+        all_predictions = defaultdict(dict)
+        for batch_start in range(0, len(all_obj_ids), object_batch_size):
+            batch = all_obj_ids[batch_start: batch_start + object_batch_size]
+            batch_prompts_named = prompts_loader(batch)
+
+            # Convert frame names → frame indices
+            batch_indexed = {}
+            for obj_id, obj_prompts in batch_prompts_named.items():
+                indexed = {name_to_idx[fn]: mask
+                           for fn, mask in obj_prompts.items()
+                           if fn in name_to_idx}
+                if indexed:
+                    batch_indexed[obj_id] = indexed
+
+            if not batch_indexed:
+                continue
+
+            batch_preds = dense_prompt_inference_multi_object(
+                model=model,
+                video_frames=frames,
+                prompts_per_obj=batch_indexed,
+                original_height=original_height,
+                original_width=original_width,
+                device=device,
+                score_threshold=score_threshold,
+                max_propagation_frames=max_propagation_frames,
+            )
+            for frame_idx, frame_preds in batch_preds.items():
+                all_predictions[frame_idx].update(frame_preds)
+            if device == "cuda":
+                torch.cuda.empty_cache()
+
+        return dict(all_predictions)
+
+    # ── Eager-loading path (existing, unchanged) ──────────────────────────────
+    if prompts is None:
+        raise ValueError("Either prompts (dict) or prompts_loader must be provided")
+
+    # Build {obj_id: {frame_idx: mask}} required by dense_prompt_inference_multi_object
     prompts_indexed = {}
     for obj_id, obj_prompts in prompts.items():
         indexed = {}

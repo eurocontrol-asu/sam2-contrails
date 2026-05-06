@@ -353,12 +353,121 @@ def test_backward_compat_no_union():
         shutil.rmtree(tmp_dir)
 
 
+def test_negative_only_prompt_ternary():
+    """Post-evidence frames with union produce negative-only segments in ternary mode."""
+    print("\n" + "=" * 60)
+    print("TEST 6: Negative-only prompt on post-evidence frames (ternary)")
+    print("=" * 60)
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        h, w = 64, 64
+        # Object "a": prompt on frame 0 only
+        obj_a = os.path.join(tmp_dir, "a")
+        os.makedirs(obj_a)
+        prompt_a = np.zeros((h, w), dtype=np.uint8)
+        prompt_a[0:20, :] = 255
+        PILImage.fromarray(prompt_a).save(os.path.join(obj_a, "00000_prompt.png"))
+        PILImage.fromarray(prompt_a).save(os.path.join(obj_a, "00000_mask.png"))
+
+        # Object "b": prompt on frames 0 and 1
+        obj_b = os.path.join(tmp_dir, "b")
+        os.makedirs(obj_b)
+        prompt_b = np.zeros((h, w), dtype=np.uint8)
+        prompt_b[40:60, :] = 255
+        PILImage.fromarray(prompt_b).save(os.path.join(obj_b, "00000_prompt.png"))
+        PILImage.fromarray(prompt_b).save(os.path.join(obj_b, "00000_mask.png"))
+        PILImage.fromarray(prompt_b).save(os.path.join(obj_b, "00001_prompt.png"))
+        PILImage.fromarray(prompt_b).save(os.path.join(obj_b, "00001_mask.png"))
+
+        # Union on both frames (covers both objects)
+        union = np.zeros((h, w), dtype=np.uint8)
+        union[0:20, :] = 255
+        union[40:60, :] = 255
+        PILImage.fromarray(union).save(os.path.join(tmp_dir, "00000_all_prompts_union.png"))
+        PILImage.fromarray(union).save(os.path.join(tmp_dir, "00001_all_prompts_union.png"))
+
+        loader = MultiplePNGSegmentLoader(tmp_dir, use_ternary_prompts=True)
+
+        # Frame 1: object "a" has no prompt/mask, but union exists
+        segments = loader.load(1)
+        obj_a_id = 1  # "a" sorts first → obj_id=1
+
+        assert obj_a_id in segments, f"Object 'a' (id={obj_a_id}) should be in segments for frame 1"
+        seg = segments[obj_a_id]
+
+        # GT channel should be all zeros (no mask file)
+        assert not seg[..., 0].any(), "GT channel should be all zeros"
+
+        # Prompt channel should be all non-positive (negative-only)
+        prompt_ch = seg[..., 1]
+        assert prompt_ch.max() <= 0, f"Prompt should have no positive values, got max={prompt_ch.max()}"
+        assert prompt_ch.min() < 0, "Prompt should have negative values from -union"
+
+        # has_prompt should be True
+        assert bool(prompt_ch.any()), "has_prompt should be True for negative-only segment"
+
+        print("  Object 'a' on frame 1: GT=zeros, prompt=negative-only ✓")
+        print(f"  Prompt range: [{prompt_ch.min():.2f}, {prompt_ch.max():.2f}]")
+        print("\n  PASSED: Negative-only prompt produced on post-evidence frame")
+    finally:
+        shutil.rmtree(tmp_dir)
+
+
+def test_negative_only_skipped_without_ternary():
+    """Without ternary mode, post-evidence frames should NOT produce segments."""
+    print("\n" + "=" * 60)
+    print("TEST 7: No negative-only prompt without ternary mode")
+    print("=" * 60)
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        h, w = 64, 64
+        # Object "a": prompt on frame 0 only
+        obj_a = os.path.join(tmp_dir, "a")
+        os.makedirs(obj_a)
+        prompt_a = np.zeros((h, w), dtype=np.uint8)
+        prompt_a[0:20, :] = 255
+        PILImage.fromarray(prompt_a).save(os.path.join(obj_a, "00000_prompt.png"))
+
+        # Object "b": prompt on frames 0 and 1
+        obj_b = os.path.join(tmp_dir, "b")
+        os.makedirs(obj_b)
+        prompt_b = np.zeros((h, w), dtype=np.uint8)
+        prompt_b[40:60, :] = 255
+        PILImage.fromarray(prompt_b).save(os.path.join(obj_b, "00000_prompt.png"))
+        PILImage.fromarray(prompt_b).save(os.path.join(obj_b, "00001_prompt.png"))
+
+        # Union on both frames
+        union = np.zeros((h, w), dtype=np.uint8)
+        union[0:20, :] = 255
+        union[40:60, :] = 255
+        PILImage.fromarray(union).save(os.path.join(tmp_dir, "00000_all_prompts_union.png"))
+        PILImage.fromarray(union).save(os.path.join(tmp_dir, "00001_all_prompts_union.png"))
+
+        loader = MultiplePNGSegmentLoader(tmp_dir, use_ternary_prompts=False)
+
+        segments = loader.load(1)
+        obj_a_id = 1
+
+        assert obj_a_id not in segments, (
+            f"Object 'a' should NOT be in segments for frame 1 without ternary mode"
+        )
+
+        print("  Object 'a' correctly absent from frame 1 without ternary ✓")
+        print("\n  PASSED: Non-ternary mode preserves old skip behavior")
+    finally:
+        shutil.rmtree(tmp_dir)
+
+
 if __name__ == "__main__":
     test_segment_loader()
     test_transforms_preserve_ternary()
     test_collate_fn()
     test_full_pipeline()
     test_backward_compat_no_union()
+    test_negative_only_prompt_ternary()
+    test_negative_only_skipped_without_ternary()
 
     print("\n" + "=" * 60)
     print("ALL TESTS PASSED")

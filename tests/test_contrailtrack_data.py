@@ -115,6 +115,39 @@ class TestPromptReader(unittest.TestCase):
         self.assertNotIn("00002", prompts.get("0", {}))
 
 
+    def test_read_prompts_ternary_negative_only_default(self):
+        """Ternary mode auto-includes negative-only frames after last positive prompt."""
+        from contrailtrack.data.prompt_reader import read_prompts
+        prompts = read_prompts(self.tmp, "00001", encoding="ternary")
+        # Object "1" only has a prompt on frame 00000, but union exists on 00001.
+        # With ternary default, it should get a negative-only entry for 00001.
+        self.assertIn("1", prompts)
+        self.assertIn("00001", prompts["1"],
+                       "Ternary should auto-include negative-only frame 00001 for object 1")
+        arr = prompts["1"]["00001"]
+        self.assertLessEqual(arr.max(), 0, "Negative-only frame should have no positive values")
+        self.assertLess(arr.min(), 0, "Negative-only frame should have negative values")
+
+    def test_read_prompts_negative_only_opt_out(self):
+        """Explicit include_negative_only=False disables negative-only frames."""
+        from contrailtrack.data.prompt_reader import read_prompts
+        prompts = read_prompts(self.tmp, "00001", encoding="ternary",
+                               include_negative_only=False)
+        # Object "1" has prompt only on 00000; with opt-out, no 00001 entry
+        self.assertIn("1", prompts)
+        self.assertNotIn("00001", prompts["1"],
+                         "With include_negative_only=False, 00001 should not appear")
+
+    def test_read_prompts_binary_no_negative_only(self):
+        """Binary mode never includes negative-only frames."""
+        from contrailtrack.data.prompt_reader import read_prompts
+        prompts = read_prompts(self.tmp, "00001", encoding="binary")
+        # Object "1" has prompt only on 00000; binary should not add 00001
+        if "1" in prompts:
+            self.assertNotIn("00001", prompts["1"],
+                             "Binary mode should not include negative-only frames")
+
+
 class TestPromptReaderIntegration(unittest.TestCase):
 
     @unittest.skipUnless(real_data_available, "Real GVCCS data not available")
