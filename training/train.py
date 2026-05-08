@@ -11,6 +11,7 @@ import sys
 import traceback
 from argparse import ArgumentParser
 
+import submitit
 import torch
 
 from hydra import compose, initialize_config_module
@@ -64,20 +65,7 @@ def format_exception(e: Exception, limit=20):
     return f"{type(e).__name__}: {e}\nTraceback:\n{traceback_str}"
 
 
-try:
-    import submitit
-except ModuleNotFoundError:
-    submitit = None
-
-
-class _CheckpointableBase:
-    pass
-
-
-_Checkpointable = submitit.helpers.Checkpointable if submitit is not None else _CheckpointableBase
-
-
-class SubmititRunner(_Checkpointable):
+class SubmititRunner(submitit.helpers.Checkpointable):
     """A callable which is passed to submitit to launch the jobs."""
 
     def __init__(self, port, cfg):
@@ -133,7 +121,7 @@ def add_pythonpath_to_sys_path():
 
 
 def main(args) -> None:
-    cfg = compose(config_name=args.config, overrides=getattr(args, "overrides", []))
+    cfg = compose(config_name=args.config)
     if cfg.launcher.experiment_log_dir is None:
         cfg.launcher.experiment_log_dir = os.path.join(
             os.getcwd(), "sam2_logs", args.config
@@ -284,8 +272,7 @@ if __name__ == "__main__":
         default=None,
         help="Number of nodes",
     )
-    args, overrides = parser.parse_known_args()
+    args = parser.parse_args()
     args.use_cluster = bool(args.use_cluster) if args.use_cluster is not None else None
-    args.overrides = overrides
     register_omegaconf_resolvers()
     main(args)
