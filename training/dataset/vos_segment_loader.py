@@ -268,8 +268,10 @@ class MultiplePNGSegmentLoader:
                 else:
                     prompt_channel = prompt_np
             else:
-                # No prompt on this frame — object has GT but no prompt
-                prompt_channel = np.zeros((h, w), dtype=np.float32)
+                if self.use_ternary_prompts and union_np is not None:
+                    prompt_channel = -union_np
+                else:
+                    prompt_channel = np.zeros((h, w), dtype=np.float32)
 
             binary_segments[obj_id] = torch.stack(
                 [
