@@ -49,6 +49,8 @@ def run_window(
     encoding: str = "ternary",
     score_threshold: float = 0.5,
     max_propagation_frames: int = 100,
+    max_negative_only_frames: int | None = 40,
+    object_batch_size: int | None = None,
     run_inference: bool = True,
     skip_existing: bool = True,
     device: str = "cuda",
@@ -164,6 +166,7 @@ def run_window(
         return stats
 
     import contrailtrack as ct
+    from contrailtrack.data.prompt_reader import load_union_frames
 
     log.info("loading_model", device=device)
     model = ct.load_model(config="ternary", device=device)
@@ -172,30 +175,67 @@ def run_window(
     frame_data, frame_names, h, w = ct.load_frames(frames_dir / vid, image_size=model.image_size)
     log.info("frames_loaded", n_frames=len(frame_names))
 
-    log.info("reading_prompts", encoding=encoding)
-    prompt_data = ct.read_prompts(prompts_dir, vid, encoding=encoding)
-    log.info("prompts_loaded", n_objects=len(prompt_data))
-
-    if not prompt_data:
+    # Determine batch size without loading all prompts into RAM
+    all_obj_ids = ct.list_objects(prompts_dir, vid)
+    n_obj = len(all_obj_ids)
+    if n_obj == 0:
         log.warning("no_prompts_for_inference", video_id=vid)
         stats["inference"] = "no_prompts"
         return stats
 
-    n_obj = len(prompt_data)
-    batch_size = 20 if n_obj > 30 else None
+    batch_size = object_batch_size if object_batch_size is not None else (20 if n_obj > 30 else None)
     log.info("running_inference", n_objects=n_obj, n_frames=len(frame_names), batch_size=batch_size)
-    predictions = ct.run_video(
-        model=model,
-        frames=frame_data,
-        frame_names=frame_names,
-        prompts=prompt_data,
-        original_height=h,
-        original_width=w,
-        score_threshold=score_threshold,
-        max_propagation_frames=max_propagation_frames,
-        object_batch_size=batch_size,
-        device=device,
-    )
+
+    if batch_size is not None:
+        # Lazy path: load union masks once, then load per-object prompts per batch.
+        # Avoids loading all objects' masks into RAM simultaneously.
+        union_cache = load_union_frames(prompts_dir, vid) if encoding == "ternary" else {}
+
+        def _loader(batch_ids):
+            return ct.read_prompts(
+                prompts_dir, vid, encoding=encoding,
+                obj_ids=batch_ids,
+                max_negative_only_frames=max_negative_only_frames,
+                union_per_frame=union_cache if encoding == "ternary" else None,
+            )
+
+        predictions = ct.run_video(
+            model=model,
+            frames=frame_data,
+            frame_names=frame_names,
+            prompts=None,
+            all_obj_ids=all_obj_ids,
+            prompts_loader=_loader,
+            original_height=h,
+            original_width=w,
+            score_threshold=score_threshold,
+            max_propagation_frames=max_propagation_frames,
+            object_batch_size=batch_size,
+            device=device,
+        )
+    else:
+        # Eager path: load all prompts upfront (small object count, no batching).
+        log.info("reading_prompts", encoding=encoding)
+        prompt_data = ct.read_prompts(
+            prompts_dir, vid, encoding=encoding,
+            max_negative_only_frames=max_negative_only_frames,
+        )
+        log.info("prompts_loaded", n_objects=len(prompt_data))
+        if not prompt_data:
+            log.warning("no_prompts_for_inference", video_id=vid)
+            stats["inference"] = "no_prompts"
+            return stats
+        predictions = ct.run_video(
+            model=model,
+            frames=frame_data,
+            frame_names=frame_names,
+            prompts=prompt_data,
+            original_height=h,
+            original_width=w,
+            score_threshold=score_threshold,
+            max_propagation_frames=max_propagation_frames,
+            device=device,
+        )
 
     preds_dir.mkdir(parents=True, exist_ok=True)
     ct.export_coco_json(
@@ -324,6 +364,8 @@ def _run_day_single_video(
     encoding: str = "ternary",
     score_threshold: float = 0.5,
     max_propagation_frames: int = 100,
+    max_negative_only_frames: int | None = 40,
+    object_batch_size: int | None = None,
     run_inference: bool = True,
     skip_existing: bool = True,
     device: str = "cuda",
@@ -438,6 +480,7 @@ def _run_day_single_video(
         return stats
 
     import contrailtrack as ct
+    from contrailtrack.data.prompt_reader import load_union_frames
 
     log.info("loading_model", device=device)
     model = ct.load_model(config="ternary", device=device)
@@ -446,30 +489,66 @@ def _run_day_single_video(
     frame_data, frame_names, h, w = ct.load_frames(frames_dir / vid, image_size=model.image_size)
     log.info("frames_loaded", n_frames=len(frame_names))
 
-    log.info("reading_prompts", encoding=encoding)
-    prompt_data = ct.read_prompts(prompts_dir, vid, encoding=encoding)
-    log.info("prompts_loaded", n_objects=len(prompt_data))
-
-    if not prompt_data:
+    # Determine batch size without loading all prompts into RAM
+    all_obj_ids = ct.list_objects(prompts_dir, vid)
+    n_obj = len(all_obj_ids)
+    if n_obj == 0:
         log.warning("no_prompts_for_inference", video_id=vid)
         stats["inference"] = "no_prompts"
         return stats
 
-    n_obj = len(prompt_data)
-    batch_size = min(5, n_obj) if n_obj > 5 else None
+    batch_size = object_batch_size if object_batch_size is not None else (min(5, n_obj) if n_obj > 5 else None)
     log.info("running_inference", n_objects=n_obj, n_frames=len(frame_names), batch_size=batch_size)
-    predictions = ct.run_video(
-        model=model,
-        frames=frame_data,
-        frame_names=frame_names,
-        prompts=prompt_data,
-        original_height=h,
-        original_width=w,
-        score_threshold=score_threshold,
-        max_propagation_frames=max_propagation_frames,
-        object_batch_size=batch_size,
-        device=device,
-    )
+
+    if batch_size is not None:
+        # Lazy path: load union masks once, then load per-object prompts per batch.
+        union_cache = load_union_frames(prompts_dir, vid) if encoding == "ternary" else {}
+
+        def _loader(batch_ids):
+            return ct.read_prompts(
+                prompts_dir, vid, encoding=encoding,
+                obj_ids=batch_ids,
+                max_negative_only_frames=max_negative_only_frames,
+                union_per_frame=union_cache if encoding == "ternary" else None,
+            )
+
+        predictions = ct.run_video(
+            model=model,
+            frames=frame_data,
+            frame_names=frame_names,
+            prompts=None,
+            all_obj_ids=all_obj_ids,
+            prompts_loader=_loader,
+            original_height=h,
+            original_width=w,
+            score_threshold=score_threshold,
+            max_propagation_frames=max_propagation_frames,
+            object_batch_size=batch_size,
+            device=device,
+        )
+    else:
+        # Eager path: load all prompts upfront (small object count, no batching).
+        log.info("reading_prompts", encoding=encoding)
+        prompt_data = ct.read_prompts(
+            prompts_dir, vid, encoding=encoding,
+            max_negative_only_frames=max_negative_only_frames,
+        )
+        log.info("prompts_loaded", n_objects=len(prompt_data))
+        if not prompt_data:
+            log.warning("no_prompts_for_inference", video_id=vid)
+            stats["inference"] = "no_prompts"
+            return stats
+        predictions = ct.run_video(
+            model=model,
+            frames=frame_data,
+            frame_names=frame_names,
+            prompts=prompt_data,
+            original_height=h,
+            original_width=w,
+            score_threshold=score_threshold,
+            max_propagation_frames=max_propagation_frames,
+            device=device,
+        )
 
     preds_dir.mkdir(parents=True, exist_ok=True)
     ct.export_coco_json(
@@ -504,6 +583,8 @@ def run_day(
     window_hours: float = 2.0,
     max_age_min: float = 5.0,
     max_propagation_frames: int = 100,
+    max_negative_only_frames: int | None = 40,
+    object_batch_size: int | None = None,
     run_inference: bool = True,
     skip_existing: bool = True,
     device: str = "cuda",
@@ -554,6 +635,8 @@ def run_day(
             camera_alt_m=camera_alt_m,
             max_age_min=max_age_min,
             max_propagation_frames=max_propagation_frames,
+            max_negative_only_frames=max_negative_only_frames,
+            object_batch_size=object_batch_size,
             run_inference=run_inference,
             skip_existing=skip_existing,
             device=device,
@@ -593,6 +676,8 @@ def run_day(
             camera_alt_m=camera_alt_m,
             max_age_min=max_age_min,
             max_propagation_frames=max_propagation_frames,
+            max_negative_only_frames=max_negative_only_frames,
+            object_batch_size=object_batch_size,
             run_inference=run_inference,
             skip_existing=skip_existing,
             device=device,

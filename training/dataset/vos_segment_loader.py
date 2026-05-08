@@ -229,6 +229,15 @@ class MultiplePNGSegmentLoader:
 
             # Skip if neither prompt nor mask exists for this frame
             if not prompt_exists and not mask_exists:
+                if self.use_ternary_prompts and union_np is not None:
+                    h, w = union_np.shape[:2]
+                    binary_segments[obj_id] = torch.stack(
+                        [
+                            torch.from_numpy(np.zeros((h, w), dtype=bool)),
+                            torch.from_numpy(-union_np),
+                        ],
+                        dim=-1,
+                    )
                 continue
 
             # Load whichever files exist to determine spatial size

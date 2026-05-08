@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import structlog
 import typer
@@ -87,6 +87,12 @@ def main(
     max_propagation_frames: Annotated[
         int, typer.Option(help="Max frames to continue prediction after last prompt."),
     ] = 100,
+    max_negative_only_frames: Annotated[
+        Optional[int], typer.Option(help="Max negative-only prompt frames per object after last positive prompt. None = unlimited."),
+    ] = 40,
+    object_batch_size: Annotated[
+        Optional[int], typer.Option(help="Number of objects to process in parallel. None = auto."),
+    ] = None,
     single_video: Annotated[
         bool, typer.Option(help="Process each day as a single continuous video (no 2h window splits)."),
     ] = False,
@@ -118,6 +124,8 @@ def main(
                 window_hours=window_hours,
                 max_age_min=max_age_min,
                 max_propagation_frames=max_propagation_frames,
+                max_negative_only_frames=max_negative_only_frames,
+                object_batch_size=object_batch_size,
                 run_inference=not no_inference,
                 skip_existing=skip_existing,
                 device=device,
