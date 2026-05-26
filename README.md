@@ -279,7 +279,8 @@ uv run contrailtrack run \
     --images-dir $FRAMES \
     --prompts    data/prompts/ \
     --out        results/ \
-    --checkpoint checkpoints/ternary.pt
+    --checkpoint checkpoints/ternary.pt \
+    --object-batch-size 25
 
 # 5. Evaluate all predictions (dataset-wide pass for comparable metrics)
 uv run contrailtrack evaluate-dataset \
