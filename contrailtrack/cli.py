@@ -118,7 +118,7 @@ def _run_single(
 ):
     from contrailtrack.model.loader import load_model
     from contrailtrack.data.video import load_frames
-    from contrailtrack.data.prompt_reader import read_prompts
+    from contrailtrack.data.prompt_reader import read_prompts, load_union_frames, list_objects
     from contrailtrack.inference.predictor import run_video
     from contrailtrack.output.coco import export_coco_json
 
@@ -131,35 +131,73 @@ def _run_single(
     frames, frame_names, orig_h, orig_w = load_frames(images, image_size=model.image_size)
     log.info("frames_loaded", n_frames=len(frame_names), resolution=f"{orig_w}x{orig_h}")
 
-    log.info("reading_prompts", encoding=encoding, max_negative_only_frames=max_negative_only_frames)
-    prompt_data = read_prompts(
-        prompts, video_id, encoding=encoding,
-        max_negative_only_frames=max_negative_only_frames,
-    )
-
+    obj_to_flight = {}
     if flight_mappings is not None:
         obj_to_flight = _load_flight_mapping(flight_mappings, video_id)
         if obj_to_flight:
-            prompt_data = {obj_to_flight.get(k, k): v for k, v in prompt_data.items()}
             log.info("flight_mapping_applied", video_id=video_id, n_mapped=len(obj_to_flight))
         else:
             log.warning("flight_mapping_not_found", video_id=video_id, mappings_dir=str(flight_mappings))
 
-    log.info("prompts_loaded", n_objects=len(prompt_data))
+    if object_batch_size is not None:
+        # Lazy path: load union masks once, then load per-object prompts per batch.
+        # Avoids loading all objects' masks into RAM simultaneously.
+        all_obj_ids = list_objects(prompts, video_id)
+        union_cache = load_union_frames(prompts, video_id) if encoding == "ternary" else {}
+        log.info("running_inference_lazy", n_objects=len(all_obj_ids),
+                 n_frames=len(frame_names), batch_size=object_batch_size,
+                 max_negative_only_frames=max_negative_only_frames)
 
-    log.info("running_inference")
-    predictions = run_video(
-        model=model,
-        frames=frames,
-        frame_names=frame_names,
-        prompts=prompt_data,
-        original_height=orig_h,
-        original_width=orig_w,
-        score_threshold=score_threshold,
-        max_propagation_frames=max_propagation_frames,
-        object_batch_size=object_batch_size,
-        device=device,
-    )
+        def _loader(batch_ids):
+            # batch_ids are folder names; remap output keys to flight IDs after loading
+            batch_data = read_prompts(
+                prompts, video_id, encoding=encoding,
+                obj_ids=batch_ids,
+                max_negative_only_frames=max_negative_only_frames,
+                union_per_frame=union_cache if encoding == "ternary" else None,
+            )
+            if obj_to_flight:
+                batch_data = {obj_to_flight.get(k, k): v for k, v in batch_data.items()}
+            return batch_data
+
+        predictions = run_video(
+            model=model,
+            frames=frames,
+            frame_names=frame_names,
+            prompts=None,
+            all_obj_ids=all_obj_ids,  # folder names used for batching only
+            prompts_loader=_loader,
+            original_height=orig_h,
+            original_width=orig_w,
+            score_threshold=score_threshold,
+            max_propagation_frames=max_propagation_frames,
+            object_batch_size=object_batch_size,
+            device=device,
+        )
+    else:
+        # Eager path: load all prompts upfront (small object count).
+        log.info("reading_prompts", encoding=encoding, max_negative_only_frames=max_negative_only_frames)
+        prompt_data = read_prompts(
+            prompts, video_id, encoding=encoding,
+            max_negative_only_frames=max_negative_only_frames,
+        )
+        if obj_to_flight:
+            prompt_data = {obj_to_flight.get(k, k): v for k, v in prompt_data.items()}
+        log.info("prompts_loaded", n_objects=len(prompt_data))
+
+        log.info("running_inference")
+        predictions = run_video(
+            model=model,
+            frames=frames,
+            frame_names=frame_names,
+            prompts=prompt_data,
+            original_height=orig_h,
+            original_width=orig_w,
+            score_threshold=score_threshold,
+            max_propagation_frames=max_propagation_frames,
+            object_batch_size=None,
+            device=device,
+        )
 
     out_path = export_coco_json(
         predictions=predictions,
