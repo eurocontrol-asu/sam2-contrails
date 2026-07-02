@@ -31,7 +31,16 @@ demo/backend/checkpoints/*.pt
 *.blg
 
 # Private research content (not part of the open-source release)
-paper/
+# LaTeX build artifacts inside paper/
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/*.spl
+paper/scripts/__pycache__/
 slides/
 notebooks/
 tmp/
