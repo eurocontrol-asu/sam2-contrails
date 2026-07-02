@@ -104,7 +104,9 @@ def main():
 
     _w = ps.FIG_W_FULL
     fig, axes2d = plt.subplots(2, 2, figsize=(_w, _w + 0.35),
-                               gridspec_kw={"wspace": 0.04, "hspace": 0.12})
+                               constrained_layout=False)
+    fig.subplots_adjust(left=0.01, right=0.99, top=0.94, bottom=0.01,
+                        wspace=0.04, hspace=0.14)
     axes = axes2d.ravel()
     for ax, panel, letter, title in zip(axes, panels, "ABCD", titles):
         ax.imshow(panel, interpolation="bilinear")

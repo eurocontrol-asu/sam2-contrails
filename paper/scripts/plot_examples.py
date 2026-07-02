@@ -285,8 +285,9 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
 
         if score is not None:
             badge_kw = {**ps.SCORE_BADGE_KW,
-                        "fontsize": 8,
-                        "bbox": {**ps.SCORE_BADGE_KW["bbox"], "pad": 1.5}}
+                        "fontsize": 5.5,
+                        "bbox": {**ps.SCORE_BADGE_KW["bbox"], "pad": 0.9,
+                                 "boxstyle": "round,pad=0.25"}}
             axes[2, col].text(0.97, 0.05, f"{score:.2f}",
                               transform=axes[2, col].transAxes, **badge_kw)
 
