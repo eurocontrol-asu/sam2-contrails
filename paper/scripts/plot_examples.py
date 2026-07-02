@@ -301,7 +301,7 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
             ps.clean_ax(axes[r, col])
             if col == 0:
                 axes[r, col].set_ylabel(row_labels[r],
-                                        fontsize=ps.FONT_ROW_LABEL, labelpad=4)
+                                        fontsize=6.5, labelpad=4)
 
     save(fig, name, out_dir)
     plt.close(fig)

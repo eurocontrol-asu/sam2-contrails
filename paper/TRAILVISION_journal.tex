@@ -39,7 +39,7 @@
                  country={France}}
 
 \begin{abstract}
-A contrail cannot exist without a flight. We exploit this constraint by inverting the usual detect-then-attribute pipeline: instead of finding contrails in an image and asking which flight made them, we start from each flight and ask whether its contrail is visible. Flight positions from air traffic surveillance data and wind fields from meteorological reanalysis feed a contrail lifecycle model that predicts where each flight's contrail should appear in the camera image---not at the aircraft's current position, but where atmospheric transport has carried the exhaust plume. These predicted locations become spatial hints (prompts) that guide a video object segmentation model to either confirm the contrail by outlining its boundaries in the image or reject the prediction when no contrail is visible. Because each prompt corresponds to exactly one flight, there is no post-hoc matching step: the output mask carries the flight's identity by construction, eliminating the appearance-based re-identification errors that compound in sequential pipelines, and tracking across frames is implicit---no separate identity-matching stage is needed. We compare prompts that carry increasing amounts of physical information---from simple presence indicators to age-weighted encodings that signal contrail freshness, optionally layered with suppression at locations claimed by other flights. On the GVCCS ground-camera dataset, the richest prompt design improves mAP$_{25:75}$ by 25\% relative to a binary presence baseline, achieves 96.2\% attribution precision (the fraction of detections matched to the correct flight), and maintains detection, on average, across three-quarters of each contrail's visible lifetime; video-level bootstrap confidence intervals confirm that the gains over the binary baseline are statistically robust.
+A contrail cannot exist without a flight. We exploit this constraint by inverting the usual detect-then-attribute pipeline: instead of finding contrails in an image and asking which flight made them, we start from each flight and ask whether its contrail is visible. Aircraft positions from surveillance data and reanalysis wind fields feed a contrail lifecycle model that predicts where each flight's contrail should appear in a ground-based camera image---not at the aircraft's position, but where the wind has carried the plume. These predictions become spatial prompts that guide a video segmentation model to either outline the contrail or reject the prompt when nothing is visible. Because each prompt belongs to exactly one flight, the output mask carries the flight's identity by construction, and tracking across frames requires no re-identification. We compare prompt encodings of increasing physical richness: binary presence, age-weighted freshness, and suppression of competing flights. On the GVCCS ground-camera dataset, the richest design improves mAP$_{25:75}$ by 25\% over the binary baseline, reaches 96.2\% attribution precision, rejects empty prompts with an AUC of 0.97, and maintains detection across three-quarters of a contrail's visible lifetime on average. Video-level bootstrap confidence intervals confirm that the attribution and segmentation-quality gains are statistically robust.
 \end{abstract}
 
 \begin{keyword}
@@ -47,6 +47,23 @@ contrails \sep climate impact \sep deep learning \sep video segmentation \sep fl
 \end{keyword}
 
 \end{frontmatter}
+
+\begin{center}
+\begin{minipage}{\linewidth}
+\centering
+\small\textbf{Graphical abstract}\\[2pt]
+\includegraphics[width=\linewidth]{figures/graphical_abstract.png}
+\end{minipage}
+\end{center}
+
+\section*{Highlights}
+\begin{itemize}
+\item Flight and weather data become prompts telling SAM2 where contrails should appear
+\item Detection, tracking, and flight attribution collapse into one segmentation pass
+\item Age-weighted prompts raise attribution precision from 89.0\% to 96.2\%
+\item Empty prompts are rejected with AUC 0.97 (94.3\% TPR, 6.5\% FPR at threshold 0.5)
+\item Video-level bootstrap confirms the attribution and quality gains are significant
+\end{itemize}
 
 % ============================================================================
 \section{Introduction}
@@ -374,6 +391,15 @@ All metrics in Table~\ref{tab:ablation} are point estimates on a single test set
 \label{fig:metrics_ci}
 \end{figure}
 
+Fig.~\ref{fig:completeness_dist} complements the interval estimates with the underlying per-flight distributions. The survival curves show that the best variant keeps more flights above every completeness level up to roughly 0.8, beyond which the binary baseline briefly leads, and the paired panel explains why the mean difference is small: most flights are tracked equally well by both variants (330 of 610 within $\pm$0.02), while 133 flights improve and 147 regress, with large movements in both directions. The aggregate near-tie in completeness therefore reflects offsetting redistribution rather than the absence of an effect.
+
+\begin{figure}[!tbp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_completeness_dist.png}
+\caption{Per-flight track completeness. (A)~Fraction of the 610 annotated flights whose completeness meets each threshold, for all five variants (color: prompt family; solid: 5-min window; dashed: 10-min window; dotted: binary). (B)~Paired per-flight comparison of the binary baseline and the best variant; each point is one flight, and counts give flights above, on, and below the diagonal (a $\pm$0.02 band counts as a tie).}
+\label{fig:completeness_dist}
+\end{figure}
+
 Three conclusions follow. First, the attribution-precision gap between binary and every age-weighted variant is decisively significant: the paired video-level bootstrap for the best variant minus binary gives $+7.1$ points with 95\% CI $[+5.4, +8.9]$ and $p(\Delta \le 0) < 10^{-4}$, and the same holds for temporal IoU ($+0.016$, CI $[+0.008, +0.024]$). Second, the within-grid effects are also robust: at the 5-minute window, adding the negative signal significantly improves completeness ($+0.021$, CI $[+0.011, +0.030]$) and detection rate ($+0.013$, CI $[+0.005, +0.020]$); at fixed age-weighted encoding, shortening the window from 10 to 5 minutes significantly improves completeness ($+0.067$), detection rate ($+0.035$), and temporal IoU ($+0.021$), all with $p(\Delta \le 0) < 10^{-2}$. Third, the differences in detection rate ($-0.8$ points, CI $[-2.2, +0.8]$) and completeness ($+0.6$ points, CI $[-1.2, +2.5]$) between the binary baseline and the best variant are \emph{not} statistically distinguishable: the binary baseline finds contrails about as often as the best variant---what it cannot do is delineate them as accurately or attribute them as reliably. We therefore claim the segmentation-quality and attribution gains as the robust contributions of richer prompts, not raw detection coverage.
 
 \subsection{Visual Analysis}
@@ -436,13 +462,20 @@ The previous subsections compared variants against each other. Here we examine t
 
 \paragraph{Temporal consistency.} Fragmentation of 1.005 means each ground truth contrail is covered by essentially a single prediction identity (the small excess above 1.0 reflects rare frame-boundary effects where the last few frames of a fading contrail are picked up under a second short-lived prediction)---a direct consequence of the prompt-based architecture where each flight maintains its identity across all frames without appearance-based re-identification. In a conventional VOS pipeline, fragmentation would be higher because identity must be re-established at each frame through appearance matching, which fails when contrails change appearance (spreading, fading, changing brightness with sun angle). Our prompt-based identity is immune to these visual changes.
 
-Track completeness of 0.730 means the model maintains detection, on average, across nearly three-quarters of a contrail's visible lifetime. The remaining quarter corresponds to frames where model confidence drops below threshold, which occurs in three situations: (1)~the contrail becomes very faint, producing weak visual evidence; (2)~wind advection errors displace the prompt from the actual location by enough pixels that the model cannot find the contrail in the prompted region; or (3)~the contrail's appearance changes abruptly (e.g., sun angle changes) and the model briefly loses confidence before recovering from temporal memory.
+Track completeness of 0.730 means the model maintains detection, on average, across nearly three-quarters of a contrail's visible lifetime. Detection is also prompt: among flights the best variant ever attributes correctly, the median delay between a contrail's first annotated frame and its first correct detection is zero frames, and 96.6\% are confirmed within two minutes of first visibility---relevant for the envisaged monitoring application, where feedback about an avoidance maneuver is most useful while the aircraft is still in the sector. The remaining quarter corresponds to frames where model confidence drops below threshold, which occurs in three situations: (1)~the contrail becomes very faint, producing weak visual evidence; (2)~wind advection errors displace the prompt from the actual location by enough pixels that the model cannot find the contrail in the prompted region; or (3)~the contrail's appearance changes abruptly (e.g., sun angle changes) and the model briefly loses confidence before recovering from temporal memory.
 
 \paragraph{Cross-contamination.} When multiple flights have nearby prompts, the model may segment one flight's contrail under another flight's prompt. Table~\ref{tab:identity} shows that the age gradient cuts high-contamination events by more than half relative to binary, and the negative signal reduces them further at each window (7.4\% of 8{,}672 events for the 5-min negative-signal variant). The remaining contamination is partly a data artifact: in dense airspace, ground truth masks from different flights naturally overlap because contrails spread and merge over time.
 
 \subsection{Failure Modes}
 
-We manually categorized the 50 lowest-performing flights (by temporal IoU) from the best variant to understand where the system fails.
+We manually categorized the 50 lowest-performing flights (by temporal IoU) from the best variant to understand where the system fails. Fig.~\ref{fig:failure_modes} illustrates the three dominant modes on real test frames.
+
+\begin{figure}[!tbp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_failure_modes.png}
+\caption{Three characteristic failure modes of the best variant (ground truth in green, prompt in blue/orange, prediction in vermilion; masks thickened for visibility). (A)~Prompt-following over-segmentation (flight 324b62ce, video~12): the wind-drifted prompt no longer matches the short visible contrail, and the model traces the prompt; the confident mask (score 0.81) covers the annotation but is far larger, so it fails the IoU match. (B)~Crossing contamination (video~12, frame~97): flight 324b5124's prediction covers 86\% of neighbouring flight 324b65d8's annotated contrail. (C)~Faint contrail missed (flight 33638739, video~5): the contrail is annotated (green) but the model, prompted along the drifted blue band, never produces a detection.}
+\label{fig:failure_modes}
+\end{figure}
 
 Wind estimation errors cause roughly one-third of failures. ERA5 wind fields miss mesoscale variability, and errors exceeding $\sim$5~m/s displace prompts by tens of pixels from the actual contrail. When displacement exceeds the model's spatial tolerance, the prompt provides misleading guidance and the model either rejects a real contrail (thinking the prompt is wrong) or segments the wrong region.
 
