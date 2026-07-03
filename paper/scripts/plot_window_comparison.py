@@ -140,11 +140,11 @@ def _crop_region(masks, pad=52):
 
 CASES = [
     dict(vid_str="00005", vid=5, obj=27, flight="3363798b",
-         frames=[110, 119, 127, 133, 140],
+         frames=[110, 127, 140],
          variants=["ternary_5", "ternary_10"],
          win=[5, 10], letter="A"),
     dict(vid_str="00007", vid=7, obj=14, flight="33c16444",
-         frames=[0, 4, 8, 13, 19],
+         frames=[0, 8, 19],
          variants=["ternary_5", "ternary_10"],
          win=[5, 10], letter="B"),
 ]
@@ -163,7 +163,7 @@ def make_figure(cases, coco, out_dir):
     heights = heights[:-1]  # drop trailing spacer
 
     label_frac = 0.07
-    fig = plt.figure(figsize=(ps.FIG_W_FULL, 4.1))
+    fig = plt.figure(figsize=(ps.FIG_W_FULL, 4.9))
     gs = fig.add_gridspec(
         nrows=len(heights), ncols=nf + 1,
         height_ratios=heights,
@@ -210,8 +210,8 @@ def make_figure(cases, coco, out_dir):
             gt = gt_all[fi]
             vis = img[r0:r1, c0:c1].copy()
             if gt is not None:
-                gt_disp = binary_dilation(gt[r0:r1, c0:c1], iterations=3)
-                vis = _blend(vis, gt_disp, _C_GT, alpha=0.9)
+                vis = ps.overlay_mask(vis, gt[r0:r1, c0:c1], tuple(_C_GT),
+                                      crop_w=c1 - c0, frac=0.008)
             ax.imshow(vis, interpolation="bilinear")
             ps.clean_ax(ax)
             dt = (fidx - frames[0]) * 0.5
@@ -248,15 +248,16 @@ def make_figure(cases, coco, out_dir):
                 if ternary is not None:
                     vis = _blend_prompt(vis, ternary[r0:r1, c0:c1], alpha=0.35)
 
-                # Faint GT underlay for reference (dilated for visibility)
+                # GT reference (solid, no outline) under the prediction
                 if gt is not None:
-                    gt_u = binary_dilation(gt[r0:r1, c0:c1], iterations=2)
-                    vis = _blend(vis, gt_u, _C_GT, alpha=ps.ALPHA_GT_UNDER)
+                    vis = ps.overlay_mask(vis, gt[r0:r1, c0:c1], tuple(_C_GT),
+                                          crop_w=c1 - c0, frac=0.006,
+                                          outline=False)
 
-                # Prediction overlay (dilated for print visibility)
+                # Prediction: solid outlined stroke — the visual subject
                 if pred is not None:
-                    pred_crop = binary_dilation(pred[r0:r1, c0:c1], iterations=3)
-                    vis = _blend(vis, pred_crop, _C_PRED, alpha=ps.ALPHA_PRED)
+                    vis = ps.overlay_mask(vis, pred[r0:r1, c0:c1], tuple(_C_PRED),
+                                          crop_w=c1 - c0, frac=0.008)
 
                 ax.imshow(vis, interpolation="bilinear")
                 ps.clean_ax(ax)

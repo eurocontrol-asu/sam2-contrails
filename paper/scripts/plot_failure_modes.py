@@ -84,7 +84,7 @@ def main():
         if case["pred_obj"] is not None:
             pred, score = load_pred(args.pred_dir, video, case["pred_obj"], frame)
 
-        vis = ps.blend_ternary_prompt(img, np.clip(ternary, 0, 1), alpha=0.9)
+        vis = ps.blend_ternary_prompt(img, np.clip(ternary, 0, 1), alpha=0.6)
         layers = [("pred", pred), ("gt", gt)]
         if not case.get("gt_on_top", True):
             layers.reverse()
@@ -92,8 +92,7 @@ def main():
             if m is None:
                 continue
             color = ps.PRED_COLOR if kind == "pred" else ps.GT_COLOR
-            it = 2 if kind == "pred" else 3
-            vis = ps.blend_mask(vis, binary_dilation(m, iterations=it), color, 0.9)
+            vis = ps.overlay_mask(vis, m, tuple(color), crop_w=560, frac=0.010)
 
         # Crop around everything relevant (or just GT+prediction when the
         # full prompt stroke would zoom the panel out too far)

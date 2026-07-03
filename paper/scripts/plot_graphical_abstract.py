@@ -54,7 +54,10 @@ def main():
         if pm is not None and np.any(pm > 0):
             prompt_vis = pas._blend_color(prompt_vis, pm, rgb, alpha=0.85)
         if dm is not None and dm.any():
-            pred_vis = pas._blend_color(pred_vis, dm, rgb, alpha=0.85)
+            from scipy.ndimage import binary_dilation
+            pred_vis = pas._blend_color(pred_vis,
+                                        binary_dilation(dm, iterations=3),
+                                        rgb, alpha=0.95)
             n_pred += 1
 
     titles = [

@@ -85,8 +85,8 @@ def main():
     # Panel A: image + GT (dilated for visibility)
     vis_a = img.copy()
     if gt is not None:
-        gt_disp = binary_dilation(gt > 0.5, iterations=3)
-        vis_a = ps.blend_mask(vis_a, gt_disp, ps.GT_COLOR, 0.9)
+        vis_a = ps.overlay_mask(vis_a, gt > 0.5, tuple(ps.GT_COLOR),
+                                crop_w=700, frac=0.008)
 
     # Panel B: binary prompt — flat blue tint
     vis_b = ps.blend_prompt_blue(img, (binary > 0).astype(float) if binary is not None

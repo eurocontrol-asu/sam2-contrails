@@ -143,7 +143,10 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
         if prompt_mask is not None and np.any(prompt_mask > 0):
             prompt_vis = _blend_color(prompt_vis, prompt_mask, rgb, alpha=0.85)
         if pred_mask is not None and pred_mask.any():
-            pred_vis = _blend_color(pred_vis, pred_mask, rgb, alpha=0.82)
+            from scipy.ndimage import binary_dilation
+            pred_vis = _blend_color(pred_vis,
+                                    binary_dilation(pred_mask, iterations=3),
+                                    rgb, alpha=0.95)
 
     # ── Numeric labels: consecutive numbers for flights visible in B or C ────
     def _candidates(mask):

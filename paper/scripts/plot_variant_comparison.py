@@ -174,6 +174,7 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
     selected = [pool[i] for i in idxs]
     if selected_frames:
         selected = selected_frames
+    n = len(selected)
 
     print(f"  Selected frames: {selected}")
 
@@ -234,13 +235,10 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
         gt = gt_masks.get(fn)
         gt_crop = gt[r0:r1, c0:c1] if gt is not None else None
 
-        # ── Row 0: Image + GT (dilated for print visibility) ─────────────────
+        # ── Row 0: Image + GT (solid outlined stroke) ────────────────────────
         ax0 = axes[0, col]
-        gt_disp = gt_crop
-        if gt_disp is not None and gt_disp.any():
-            from scipy.ndimage import binary_dilation
-            gt_disp = binary_dilation(gt_disp, iterations=3)
-        vis0 = ps.blend_mask(img_crop, gt_disp, ps.GT_COLOR, 0.9)
+        vis0 = ps.overlay_mask(img_crop, gt_crop, tuple(ps.GT_COLOR),
+                               crop_w=c1 - c0, frac=0.008)
         ax0.imshow(vis0, interpolation="bilinear")
         ps.clean_ax(ax0)
         f0 = int(selected[0])
@@ -272,11 +270,10 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
             pred_ann = variant_preds[name].get(fn)
             score_text = None
             if pred_ann is not None:
-                from scipy.ndimage import binary_dilation
                 pred_mask_crop = decode_rle(pred_ann)[r0:r1, c0:c1]
-                pred_disp = binary_dilation(pred_mask_crop, iterations=2)
                 score = pred_ann.get("score", 0)
-                vis = _blend(vis, pred_disp, _PRED_NP, OVERLAY_ALPHA)
+                vis = ps.overlay_mask(vis, pred_mask_crop, tuple(ps.PRED_COLOR),
+                                      crop_w=c1 - c0, frac=0.008)
                 score_text = f"{score:.2f}"
 
             ax.imshow(vis, interpolation="bilinear")

@@ -184,6 +184,37 @@ def blend_mask(rgb, mask, color, alpha):
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def overlay_mask(rgb, mask, color, crop_w=1024, frac=0.010, outline=True):
+    """Draw a mask as a SOLID, print-visible stroke with a white outline.
+
+    Thin contrail masks (1--4 px) disappear when a 1024-px image is printed
+    at one or two inches. This helper widens the stroke to `frac` of the
+    displayed crop width and separates it from the photo with a thin white
+    ring, so the color reads at any print size and on any background.
+
+    Args:
+        rgb:    uint8 (H, W, 3) image (modified copy returned)
+        mask:   bool (H, W)
+        color:  uint8 RGB triple
+        crop_w: width in pixels of the region that will be DISPLAYED
+                (pass the crop width so stroke thickness adapts to zoom)
+        frac:   stroke half-width as a fraction of crop_w
+        outline: draw a 30%-of-stroke white separation ring
+    """
+    from scipy.ndimage import binary_dilation
+
+    if mask is None or not np.any(mask):
+        return rgb.copy()
+    it = max(2, int(round(crop_w * frac)))
+    body = binary_dilation(mask, iterations=it)
+    out = rgb.copy()
+    if outline:
+        ring = binary_dilation(body, iterations=max(1, it // 3)) & ~body
+        out[ring] = (255, 255, 255)
+    out[body] = color
+    return out
+
+
 def panel_letter(ax, letter, x=-0.08, y=1.05):
     ax.text(
         x,

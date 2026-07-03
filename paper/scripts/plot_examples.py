@@ -269,18 +269,21 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
         pred  = rd["pred"]
         score = rd.get("score")
 
-        # Row 0: image + GT overlay
-        vis0 = ps.blend_mask(img, gt, ps.GT_COLOR, ps.ALPHA_GT)
+        # Row 0: image + GT overlay (solid outlined stroke)
+        vis0 = ps.overlay_mask(img, gt, tuple(ps.GT_COLOR), crop_w=img.shape[1],
+                               frac=0.006)
         axes[0, col].imshow(vis0, interpolation="bilinear")
 
         # Row 1: ternary prompt (blue positive + orange negative)
         vis1 = ps.blend_ternary_prompt(img, ternary)
         axes[1, col].imshow(vis1, interpolation="bilinear")
 
-        # Row 2: faint GT underlay + prediction
-        vis2 = ps.blend_mask(img, gt, ps.GT_COLOR, ps.ALPHA_GT_UNDER)
+        # Row 2: GT reference (solid, no outline) under outlined prediction
+        vis2 = ps.overlay_mask(img, gt, tuple(ps.GT_COLOR), crop_w=img.shape[1],
+                               frac=0.004, outline=False)
         if pred is not None and pred.any():
-            vis2 = ps.blend_mask(vis2, pred, ps.PRED_COLOR, ps.ALPHA_PRED)
+            vis2 = ps.overlay_mask(vis2, pred, tuple(ps.PRED_COLOR),
+                                   crop_w=img.shape[1], frac=0.006)
         axes[2, col].imshow(vis2, interpolation="bilinear")
 
         if score is not None:
@@ -392,7 +395,7 @@ def main():
                         help="Video ID. Default: 14 (strong negative signal, 25-frame lifecycle).")
     parser.add_argument("--obj_id",     type=int, default=109,
                         help="Object folder ID. Default: 109 (flight 34ba8a2b, mean neg/pos=21x).")
-    parser.add_argument("--n_frames",   type=int, default=4,
+    parser.add_argument("--n_frames",   type=int, default=3,
                         help="Number of frames to show in the sequence figure.")
     parser.add_argument("--n_examples", type=int, default=4,
                         help="Number of contrails shown in the multi-example overview figure.")
