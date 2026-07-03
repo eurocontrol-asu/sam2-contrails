@@ -238,8 +238,8 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
     """
     Figure layout — consistent with Figs 6 and 7 (N frames × 3 rows):
 
-      Row 0  — full image + GT overlay (crimson)
-      Row 1  — full image + ternary prompt (blue=target, orange=competing)
+      Row 0  — full image + GT overlay (green)
+      Row 1  — full image + ternary prompt (blue=target, magenta=competing)
       Row 2  — full image + faint GT + prediction (vermilion) + score badge
 
     Shows full images without cropping: the ternary prompt's negative signal
@@ -274,7 +274,7 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
                                frac=0.006)
         axes[0, col].imshow(vis0, interpolation="bilinear")
 
-        # Row 1: ternary prompt (blue positive + orange negative)
+        # Row 1: ternary prompt (blue positive + magenta negative)
         vis1 = ps.blend_ternary_prompt(img, ternary)
         axes[1, col].imshow(vis1, interpolation="bilinear")
 

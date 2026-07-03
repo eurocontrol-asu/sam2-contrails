@@ -49,7 +49,7 @@ def _load_image(vid, fidx):
 
 
 def _load_ternary_prompt(vid, obj, fidx, wmin):
-    """Load ternary prompt in [-1, 1]: positive=blue target, negative=orange competing."""
+    """Load ternary prompt in [-1, 1]: positive=blue target, negative=magenta competing."""
     subdir = "per_object_data" if wmin == 1 else f"per_object_data_age_{wmin}"
     pod_dir = _PROMPT_DIR / subdir
     return ps.load_ternary_prompt(pod_dir, vid, obj, f"{fidx:05d}")
@@ -116,7 +116,7 @@ def _blend(rgb, mask, color, alpha):
 
 
 def _blend_prompt(rgb, ternary, alpha=ps.ALPHA_PROMPT):
-    """Blend ternary prompt onto RGB image (positive=blue, negative=orange)."""
+    """Blend ternary prompt onto RGB image (positive=blue, negative=magenta)."""
     if ternary is None:
         return rgb.copy()
     return ps.blend_ternary_prompt(rgb, ternary, alpha)

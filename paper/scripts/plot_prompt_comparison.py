@@ -8,7 +8,7 @@ prompt encodings actually used in the paper:
   A  camera image + ground truth annotation
   B  binary prompt (presence only, 1-min window)
   C  age-weighted prompt (5-min window; bright = fresh, dim = old)
-  D  age-weighted + negative signal (5-min; orange = competing flights)
+  D  age-weighted + negative signal (5-min; magenta = competing flights)
 
 Default example: video 5, object 64, frame 104 — a young contrail whose
 prompt crosses several other flights' prompts.
@@ -95,7 +95,7 @@ def main():
     # Panel C: age-weighted prompt — blue gradient
     vis_c = ps.blend_prompt_blue(img, age)
 
-    # Panel D: ternary — blue gradient + orange negative
+    # Panel D: ternary — blue gradient + magenta negative
     vis_d = ps.blend_ternary_prompt(img, ternary)
 
     panels = [crop(v) for v in (vis_a, vis_b, vis_c, vis_d)]

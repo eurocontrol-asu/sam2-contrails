@@ -252,7 +252,7 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
         for vrow, name in enumerate(variant_names):
             ax = axes[vrow + 1, col]
 
-            # Prompt rendering: ternary→blue+orange, age→blue gradient, binary→blue flat
+            # Prompt rendering: ternary→blue+magenta, age→blue gradient, binary→blue flat
             if name in ("ternary_5", "ternary_10"):
                 ternary = ps.load_ternary_prompt(pod_dirs[vrow], video, obj_ids[vrow], fn)
                 vis = ps.blend_ternary_prompt(img_crop, ternary[r0:r1, c0:c1],

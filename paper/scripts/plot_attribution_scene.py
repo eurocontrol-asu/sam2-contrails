@@ -143,10 +143,8 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
         if prompt_mask is not None and np.any(prompt_mask > 0):
             prompt_vis = _blend_color(prompt_vis, prompt_mask, rgb, alpha=0.85)
         if pred_mask is not None and pred_mask.any():
-            from scipy.ndimage import binary_dilation
-            pred_vis = _blend_color(pred_vis,
-                                    binary_dilation(pred_mask, iterations=3),
-                                    rgb, alpha=0.95)
+            pred_vis = ps.overlay_mask(pred_vis, pred_mask, rgb,
+                                       crop_w=1024, frac=0.004)
 
     # ── Numeric labels: consecutive numbers for flights visible in B or C ────
     def _candidates(mask):
@@ -177,12 +175,16 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
                               gridspec_kw={"wspace": 0.04})
 
     panel_letters = ["A", "B", "C"]
+    panel_titles  = ["Camera image", "Per-flight prompts",
+                     "Attributed predictions"]
     panels        = [img_gray, prompt_vis, pred_vis]
 
-    for ax, letter, panel_img in zip(axes, panel_letters, panels):
+    for ax, letter, title, panel_img in zip(axes, panel_letters, panel_titles,
+                                            panels):
         kw = {"cmap": "gray", "vmin": 0, "vmax": 255} if panel_img.ndim == 2 else {}  # already stretched by load_gray
         ax.imshow(panel_img, interpolation="bilinear", **kw)
         ps.clean_ax(ax)
+        ax.set_title(title, fontsize=ps.FONT_COL_TITLE, pad=2.5)
         ps.panel_tag(ax, letter)
 
     H, W = img_gray.shape

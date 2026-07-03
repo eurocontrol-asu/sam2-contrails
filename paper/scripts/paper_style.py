@@ -11,14 +11,14 @@ Variant naming (use these strings everywhere, in scripts and LaTeX):
 Color rules:
   · Image overlays   → GT always green (#1a9641), predictions always vermilion (#D55E00),
                         positive prompt always blue (#0072B2), negative signal always
-                        orange (#E69F00).  Do NOT change these by variant.
+                        magenta (#C51B7D).  Do NOT change these by variant.
   · Chart elements   → each variant gets its own fixed Okabe-Ito color (VARIANT_COLOR).
   · Detection status → green border / green text = detected; red = missed.
 
 Prompt rendering rules (consistent across ALL figures):
   · Binary prompt      → solid blue tint (PROMPT_BLUE, alpha=ALPHA_PROMPT)
   · Age-weighted prompt→ gradient blue tint (intensity ∝ age weight)
-  · Ternary prompt     → blue where positive, ORANGE where negative signal
+  · Ternary prompt     → blue where positive, MAGENTA where negative signal
                          Use blend_ternary_prompt() which handles both channels.
   · The negative signal is reconstructed from all_prompts_union.png:
         ternary = where(pos>0, pos, -union)   — values in [-1, 1]
@@ -117,11 +117,11 @@ PROMPT_COLOR = np.array([240, 228, 66], dtype=np.uint8)  # yellow   #F0E442
 GT_HEX = "#1a9641"
 PRED_HEX = "#D55E00"
 PROMPT_HEX = "#F0E442"
-NEG_HEX = "#E69F00"  # orange — ternary negative signal
+NEG_HEX = "#C51B7D"  # magenta — ternary negative signal
 
 # Negative-signal color as uint8 and normalised float arrays
-NEG_COLOR = np.array([230, 159, 0], dtype=np.uint8)   # orange #E69F00
-NEG_ORANGE = np.array([0.90, 0.62, 0.0])              # normalised for blending
+NEG_COLOR = np.array([197, 27, 125], dtype=np.uint8)   # magenta #C51B7D
+NEG_ORANGE = np.array([0.77, 0.11, 0.49])              # normalised for blending
 
 # Detection-status colors (borders, markers)
 DETECT_HEX = "#1a9641"  # dark green
@@ -150,8 +150,8 @@ def save_figure(fig, name, out_dir="paper/figures"):
 # Display stretch for sky images. Keep the background slightly muted so the
 # saturated overlay colors (green GT, blue prompt, vermilion prediction)
 # stand out; a small positive vmin adds contrast without crushing shadows.
-GRAY_VMIN = -10
-GRAY_VMAX = 235
+GRAY_VMIN = -48
+GRAY_VMAX = 350
 
 
 def load_gray(path):
@@ -313,7 +313,7 @@ def load_ternary_prompt(pod_dir, video, obj_id, frame):
     """Reconstruct ternary prompt array in [-1, 1].
 
     Positive values  → target flight's age-weighted footprint (blue).
-    Negative values  → competing flights' union footprint (orange).
+    Negative values  → competing flights' union footprint (magenta).
 
     Formula (mirrors training/dataset/vos_segment_loader.py):
         ternary = where(pos > 0, pos, -union)
@@ -348,7 +348,7 @@ def blend_ternary_prompt(rgb, ternary, alpha=ALPHA_PROMPT):
     """Blend full ternary prompt onto RGB image.
 
     Positive regions → blue  tint (PROMPT_BLUE), intensity ∝ pos value.
-    Negative regions → orange tint (NEG_ORANGE),  intensity ∝ neg value.
+    Negative regions → magenta tint (NEG_ORANGE), intensity ∝ neg value.
 
     Args:
         rgb:     uint8 (H, W, 3) image

@@ -48,14 +48,6 @@ contrails \sep climate impact \sep deep learning \sep video segmentation \sep fl
 
 \end{frontmatter}
 
-\begin{center}
-\begin{minipage}{\linewidth}
-\centering
-\small\textbf{Graphical abstract}\\[2pt]
-\includegraphics[width=\linewidth]{figures/graphical_abstract.png}
-\end{minipage}
-\end{center}
-
 \section*{Highlights}
 \begin{itemize}
 \item Flight and weather data become prompts telling SAM2 where contrails should appear
@@ -142,7 +134,7 @@ Fig.~\ref{fig:prompt_comparison} illustrates the three encoding strategies on a 
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_prompts.png}
-\caption{The three prompt encodings on a real test-set flight (video~5, frame~104). (A)~Camera image with the ground truth annotation (green, thickened for visibility). (B)~Binary encoding: a flat presence mask restricted to the last minute of predicted geometry. (C)~Age-weighted encoding over a 5-minute window: intensity fades from bright (fresh, spatially reliable) to dim (old, potentially wind-drifted); note that the prompt extends beyond the annotated contrail---prompts are hints, not ground truth. (D)~Adding the negative signal: competing flights' predicted contrails (orange) are layered as suppression; where they cross the target's own prompt (blue), the positive signal takes priority.}
+\caption{The three prompt encodings on a real test-set flight (video~5, frame~104). (A)~Camera image with the ground truth annotation (green, thickened for visibility). (B)~Binary encoding: a flat presence mask restricted to the last minute of predicted geometry. (C)~Age-weighted encoding over a 5-minute window: intensity fades from bright (fresh, spatially reliable) to dim (old, potentially wind-drifted); note that the prompt extends beyond the annotated contrail---prompts are hints, not ground truth. (D)~Adding the negative signal: competing flights' predicted contrails (magenta) are layered as suppression; where they cross the target's own prompt (blue), the positive signal takes priority.}
 \label{fig:prompt_comparison}
 \end{figure}
 
@@ -376,12 +368,12 @@ Three conclusions follow. First, the attribution-precision gap between binary an
 
 \subsection{Visual Analysis}
 
-\paragraph{Tracking sequence.} Fig.~\ref{fig:tracking_sequence} shows four frames sampled from a 25-frame tracking window (frames 205--229) in which the best variant (age-weighted with negative signal, 5~min) follows flight 34ba902a (video~14) through a scene dense with competing traffic. Under the binary baseline this flight reaches 40.9\% completeness; the age-weighted with negative signal variant raises it to 56.8\%. The prompt row makes the difficulty of the scene immediately visible: orange regions indicate where competing contrails from other flights claim the image, while a narrow blue band marks the target contrail's predicted position. The negative signal suppresses attention to competing structures and allows SAM2 to lock onto the correct trajectory, with prediction scores rising from 0.76 to 0.94 across the shown frames as the visual evidence accumulates in memory.
+\paragraph{Tracking sequence.} Fig.~\ref{fig:tracking_sequence} shows four frames sampled from a 25-frame tracking window (frames 205--229) in which the best variant (age-weighted with negative signal, 5~min) follows flight 34ba902a (video~14) through a scene dense with competing traffic. Under the binary baseline this flight reaches 40.9\% completeness; the age-weighted with negative signal variant raises it to 56.8\%. The prompt row makes the difficulty of the scene immediately visible: magenta regions indicate where competing contrails from other flights claim the image, while a narrow blue band marks the target contrail's predicted position. The negative signal suppresses attention to competing structures and allows SAM2 to lock onto the correct trajectory, with prediction scores rising from 0.76 to 0.94 across the shown frames as the visual evidence accumulates in memory.
 
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_examples.png}
-\caption{Tracking sequence for flight 34ba902a (video~14, age-weighted with negative signal, 5-min variant); columns are frames 205--229, labelled by elapsed time at the 30-second GVCCS cadence. Row~1: image with ground truth overlay (green). Row~2: age-weighted prompt with negative signal overlay---\textit{blue} marks the target flight's age-weighted footprint; \textit{orange} marks regions attributed to competing flights (the negative suppression signal). Row~3: prediction overlay (vermilion) with object score badge; the solid green underlay repeats the ground truth for comparison. On this flight the variant reaches 56.8\% completeness (vs.\ 40.9\% for the binary baseline), with scores rising from 0.76 to 0.94 across the shown frames.}
+\caption{Tracking sequence for flight 34ba902a (video~14, age-weighted with negative signal, 5-min variant); columns are frames 205--229, labelled by elapsed time at the 30-second GVCCS cadence. Row~1: image with ground truth overlay (green). Row~2: age-weighted prompt with negative signal overlay---\textit{blue} marks the target flight's age-weighted footprint; \textit{magenta} marks regions attributed to competing flights (the negative suppression signal). Row~3: prediction overlay (vermilion) with object score badge; the solid green underlay repeats the ground truth for comparison. On this flight the variant reaches 56.8\% completeness (vs.\ 40.9\% for the binary baseline), with scores rising from 0.76 to 0.94 across the shown frames.}
 \label{fig:tracking_sequence}
 \end{figure}
 
@@ -390,7 +382,7 @@ Three conclusions follow. First, the attribution-precision gap between binary an
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_variant_comparison.png}
-\caption{Flight 324b5d6a (video~12) tracked by all five variants; columns are labelled by elapsed time (30-second cadence). Row~1: image with ground truth overlay (green, thickened for visibility). Rows~2--6: per-variant prompt and prediction---flat \textit{blue} for the binary prompt, \textit{blue} gradient for age-weighted prompts, plus \textit{orange} competing-flight suppression for the negative-signal variants; vermilion shows the predicted mask (thickened for visibility) with its object-score badge. All variants fire confidently on most frames, but only the 5-minute age-weighted variants keep the mask on the annotated contrail (completeness 89\% without and 92\% with the negative signal, vs.\ 31\% for binary and 39\%/33\% for the drift-affected 10-minute variants).}
+\caption{Flight 324b5d6a (video~12) tracked by all five variants; columns are labelled by elapsed time (30-second cadence). Row~1: image with ground truth overlay (green, thickened for visibility). Rows~2--6: per-variant prompt and prediction---flat \textit{blue} for the binary prompt, \textit{blue} gradient for age-weighted prompts, plus \textit{magenta} competing-flight suppression for the negative-signal variants; vermilion shows the predicted mask (thickened for visibility) with its object-score badge. All variants fire confidently on most frames, but only the 5-minute age-weighted variants keep the mask on the annotated contrail (completeness 89\% without and 92\% with the negative signal, vs.\ 31\% for binary and 39\%/33\% for the drift-affected 10-minute variants).}
 \label{fig:variant_comparison}
 \end{figure}
 
@@ -399,7 +391,7 @@ Three conclusions follow. First, the attribution-precision gap between binary an
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_window_comparison.png}
-\caption{Age-window trade-off on two contrail flights, both tracked by the age-weighted with negative signal encoding; columns are labelled by elapsed time (30-second frame cadence). Row~1 of each case: image with ground truth overlay (green, thickened for visibility). Rows~2--3: 5- and 10-minute windows---\textit{blue} tint shows the target flight's age-weighted prompt, \textit{orange} tint the suppression signal from competing flights, vermilion the predicted mask with its object-score badge, and a solid green underlay repeats the ground truth. Case~A (flight 3363798b, video~5): the contrail becomes clearly visible only minutes after formation; the 5-min window covers too small a footprint---its two scored predictions fail the IoU~$\geq$~0.25 match against ground truth---while the 10-min window extends the prompt along the full contrail (2.7\% vs.\ 70.3\% completeness). Case~B (flight 33c16444, video~7): older unprompted contrails cross the scene; under the 10-min window they enter the negative signal and suppress the true detection (0\% completeness), whereas the 5-min window avoids the contamination (100\%).}
+\caption{Age-window trade-off on two contrail flights, both tracked by the age-weighted with negative signal encoding; columns are labelled by elapsed time (30-second frame cadence). Row~1 of each case: image with ground truth overlay (green, thickened for visibility). Rows~2--3: 5- and 10-minute windows---\textit{blue} tint shows the target flight's age-weighted prompt, \textit{magenta} tint the suppression signal from competing flights, vermilion the predicted mask with its object-score badge, and a solid green underlay repeats the ground truth. Case~A (flight 3363798b, video~5): the contrail becomes clearly visible only minutes after formation; the 5-min window covers too small a footprint---its two scored predictions fail the IoU~$\geq$~0.25 match against ground truth---while the 10-min window extends the prompt along the full contrail (2.7\% vs.\ 70.3\% completeness). Case~B (flight 33c16444, video~7): older unprompted contrails cross the scene; under the 10-min window they enter the negative signal and suppress the true detection (0\% completeness), whereas the 5-min window avoids the contamination (100\%).}
 \label{fig:window_comparison}
 \end{figure}
 
@@ -443,7 +435,7 @@ We manually categorized the 50 lowest-performing flights (by temporal IoU) from 
 \begin{figure}[!tbp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig_failure_modes.png}
-\caption{Three characteristic failure modes of the best variant (ground truth in green, prompt in blue/orange, prediction in vermilion; masks thickened for visibility). (A)~Prompt-following over-segmentation (flight 324b62ce, video~12): the wind-drifted prompt no longer matches the short visible contrail, and the model traces the prompt; the confident mask (score 0.81) covers the annotation but is far larger, so it fails the IoU match. (B)~Crossing contamination (video~12, frame~97): flight 324b5124's prediction covers 86\% of neighbouring flight 324b65d8's annotated contrail. (C)~Faint contrail missed (flight 33638739, video~5): the contrail is annotated (green) but the model, prompted along the drifted blue band, never produces a detection.}
+\caption{Three characteristic failure modes of the best variant (ground truth in green, prompt in blue/magenta, prediction in vermilion; masks thickened for visibility). (A)~Prompt-following over-segmentation (flight 324b62ce, video~12): the wind-drifted prompt no longer matches the short visible contrail, and the model traces the prompt; the confident mask (score 0.81) covers the annotation but is far larger, so it fails the IoU match. (B)~Crossing contamination (video~12, frame~97): flight 324b5124's prediction covers 86\% of neighbouring flight 324b65d8's annotated contrail. (C)~Faint contrail missed (flight 33638739, video~5): the contrail is annotated (green) but the model, prompted along the drifted blue band, never produces a detection.}
 \label{fig:failure_modes}
 \end{figure}
 
