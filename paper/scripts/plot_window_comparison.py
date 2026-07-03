@@ -216,12 +216,9 @@ def make_figure(cases, coco, out_dir):
             ps.clean_ax(ax)
             dt = (fidx - frames[0]) * 0.5
             ax.set_title(f"frame {fidx}" if fi == 0 else f"+{dt:.1f} min",
-                         fontsize=ps.FONT_COL_TITLE - 2, pad=2.0)
+                         fontsize=ps.FONT_COL_TITLE, pad=2.0)
             if fi == 0:
-                ax.text(0.03, 0.95, case["letter"],
-                        transform=ax.transAxes, fontsize=ps.FONT_PANEL_LETTER,
-                        fontweight="bold", color="black", va="top", ha="left",
-                        bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.2))
+                ps.panel_tag(ax, case["letter"])
 
         # ── Rows 1 & 2: predictions ──────────────────────────────────
         for ri, (variant, wmin) in enumerate(zip(case["variants"], case["win"])):
@@ -264,9 +261,7 @@ def make_figure(cases, coco, out_dir):
 
                 # Score badge — smaller to match cell size
                 if pred is not None and score > 0.01:
-                    badge_kw = {**ps.SCORE_BADGE_KW,
-                                "fontsize": 8,
-                                "bbox": {**ps.SCORE_BADGE_KW["bbox"], "pad": 1.5}}
+                    badge_kw = ps.SCORE_BADGE_KW
                     ax.text(0.97, 0.05, f"{score:.2f}",
                             transform=ax.transAxes, **badge_kw)
 

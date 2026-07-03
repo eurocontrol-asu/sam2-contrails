@@ -75,7 +75,7 @@ def main():
         kw = {"cmap": "gray", "vmin": 0, "vmax": 255} if panel.ndim == 2 else {}
         ax.imshow(panel, interpolation="bilinear", **kw)
         ps.clean_ax(ax)
-        ax.set_title(title, fontsize=5.8, pad=3, linespacing=1.35)
+        ax.set_title(title, fontsize=ps.FONT_COL_TITLE, pad=3, linespacing=1.35)
 
     # arrows between panels (figure coordinates)
     for x in (0.352, 0.672):

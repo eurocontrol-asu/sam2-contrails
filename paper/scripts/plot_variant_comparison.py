@@ -244,9 +244,9 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
         f0 = int(selected[0])
         dt = (int(fn) - f0) * 0.5
         ax0.set_title(f"frame {int(fn)}" if col == 0 else f"+{dt:.1f} min",
-                      fontsize=ps.FONT_COL_TITLE - 2, pad=2.5)
+                      fontsize=ps.FONT_COL_TITLE, pad=2.5)
         if col == 0:
-            ax0.set_ylabel(row_labels[0], fontsize=6.5, labelpad=6)
+            ax0.set_ylabel(row_labels[0], fontsize=ps.FONT_ROW_LABEL, labelpad=6)
 
         # ── Rows 1…: per-variant prompt + prediction ─────────────────────────
         for vrow, name in enumerate(variant_names):
@@ -280,16 +280,13 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
             ps.clean_ax(ax)
 
             if score_text:
-                badge_kw = {**ps.SCORE_BADGE_KW,
-                            "fontsize": 5,
-                            "bbox": {**ps.SCORE_BADGE_KW["bbox"], "pad": 0.8,
-                                     "boxstyle": "round,pad=0.22"}}
+                badge_kw = ps.SCORE_BADGE_KW
                 ax.text(0.97, 0.05, score_text,
                         transform=ax.transAxes, **badge_kw)
 
             if col == 0:
                 ax.set_ylabel(row_labels[vrow + 1],
-                              fontsize=6.5, labelpad=6)
+                              fontsize=ps.FONT_ROW_LABEL, labelpad=6)
 
     save(fig, "fig_variant_comparison", out_dir)
     plt.close(fig)

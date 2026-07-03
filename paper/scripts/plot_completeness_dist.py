@@ -55,7 +55,7 @@ def main():
     ax_e.set_ylabel("Fraction of flights $\\geq$ threshold")
     ax_e.set_xlim(0, 1)
     ax_e.set_ylim(0, 1)
-    ax_e.legend(loc="lower left", fontsize=5.2, handlelength=2.0,
+    ax_e.legend(loc="lower left", fontsize=6, handlelength=2.0,
                 labelspacing=0.3)
 
     # ── Panel B: paired scatter, binary vs best ──────────────────────────
@@ -81,7 +81,7 @@ def main():
     ax_s.set_ylim(-0.03, 1.03)
     ax_s.set_aspect("equal")
     ax_s.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=1,
-                fontsize=5.0, handletextpad=0.15, borderaxespad=0.0,
+                fontsize=6, handletextpad=0.15, borderaxespad=0.0,
                 labelspacing=0.25, markerscale=1.4, frameon=False)
 
     for ax, letter in ((ax_e, "A"), (ax_s, "B")):
@@ -89,7 +89,7 @@ def main():
         ax.xaxis.label.set_size(7)
         ax.yaxis.label.set_size(7)
         ax.text(-0.22, 1.04, letter, transform=ax.transAxes,
-                fontsize=ps.FONT_PANEL_LETTER - 2, fontweight="bold",
+                fontsize=ps.FONT_PANEL_LETTER, fontweight="bold",
                 va="bottom", ha="left")
 
     ps.save_figure(fig, "fig_completeness_dist", args.out_dir)

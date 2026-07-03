@@ -287,10 +287,7 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
         axes[2, col].imshow(vis2, interpolation="bilinear")
 
         if score is not None:
-            badge_kw = {**ps.SCORE_BADGE_KW,
-                        "fontsize": 5.5,
-                        "bbox": {**ps.SCORE_BADGE_KW["bbox"], "pad": 0.9,
-                                 "boxstyle": "round,pad=0.25"}}
+            badge_kw = ps.SCORE_BADGE_KW
             axes[2, col].text(0.97, 0.05, f"{score:.2f}",
                               transform=axes[2, col].transAxes, **badge_kw)
 
@@ -299,13 +296,13 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
         f0 = int(rows[0]["frame"])
         dt = (int(rd["frame"]) - f0) * 0.5  # minutes
         title = f"frame {int(rd['frame'])}" if col == 0 else f"+{dt:.1f} min"
-        axes[0, col].set_title(title, fontsize=ps.FONT_COL_TITLE - 2, pad=2.5)
+        axes[0, col].set_title(title, fontsize=ps.FONT_COL_TITLE, pad=2.5)
 
         for r in range(3):
             ps.clean_ax(axes[r, col])
             if col == 0:
                 axes[r, col].set_ylabel(row_labels[r],
-                                        fontsize=6.5, labelpad=4)
+                                        fontsize=ps.FONT_ROW_LABEL, labelpad=4)
 
     save(fig, name, out_dir)
     plt.close(fig)

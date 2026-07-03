@@ -111,23 +111,15 @@ def main():
 
         ax.imshow(vis[r0:r1, c0:c1], interpolation="bilinear")
         ps.clean_ax(ax)
-        ax.set_title(case["title"], fontsize=ps.FONT_COL_TITLE - 3, pad=2.5)
-        ax.text(0.04, 0.96, case["letter"], transform=ax.transAxes,
-                fontsize=ps.FONT_PANEL_LETTER - 2, fontweight="bold",
-                va="top", ha="left",
-                bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.2))
+        ax.set_title(case["title"], fontsize=ps.FONT_COL_TITLE, pad=2.5)
+        ps.panel_tag(ax, case["letter"])
         if case["badge"] and score is not None:
             ax.text(0.96, 0.05, f"{score:.2f}", transform=ax.transAxes,
-                    fontsize=5.5, fontweight="bold", color="white",
-                    ha="right", va="bottom",
-                    bbox=dict(fc=ps.PRED_HEX, alpha=0.92,
-                              boxstyle="round,pad=0.25", ec="none"))
+                    **ps.SCORE_BADGE_KW)
         elif not case["badge"]:
-            ax.text(0.96, 0.05, "no detection", transform=ax.transAxes,
-                    fontsize=5.5, fontweight="bold", color="white",
-                    ha="right", va="bottom",
-                    bbox=dict(fc="#666666", alpha=0.92,
-                              boxstyle="round,pad=0.25", ec="none"))
+            kw = {**ps.SCORE_BADGE_KW,
+                  "bbox": {**ps.SCORE_BADGE_KW["bbox"], "fc": "#666666"}}
+            ax.text(0.96, 0.05, "no detection", transform=ax.transAxes, **kw)
 
     ps.save_figure(fig, "fig_failure_modes", args.out_dir)
 

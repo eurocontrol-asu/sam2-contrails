@@ -111,11 +111,8 @@ def main():
     for ax, panel, letter, title in zip(axes, panels, "ABCD", titles):
         ax.imshow(panel, interpolation="bilinear")
         ps.clean_ax(ax)
-        ax.set_title(title, fontsize=ps.FONT_COL_TITLE - 3, pad=2.5)
-        ax.text(0.04, 0.96, letter, transform=ax.transAxes,
-                fontsize=ps.FONT_PANEL_LETTER - 2, fontweight="bold",
-                va="top", ha="left",
-                bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.2))
+        ax.set_title(title, fontsize=ps.FONT_COL_TITLE, pad=2.5)
+        ps.panel_tag(ax, letter)
 
     ps.save_figure(fig, "fig_prompts", args.out_dir)
 

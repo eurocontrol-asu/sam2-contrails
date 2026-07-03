@@ -63,7 +63,7 @@ def main():
             ax.annotate(f"{p:.3f}" if p < 1 else f"{p:.2f}",
                         (hi, yi), textcoords="offset points", xytext=(3.5, 0),
                         ha="left", va="center", fontsize=5.5, color="#333333")
-        ax.set_title(title, fontsize=8, pad=4)
+        ax.set_title(title, fontsize=ps.FONT_COL_TITLE, pad=4)
         ax.grid(axis="x", linewidth=0.3, color="#dddddd")
         ax.set_axisbelow(True)
         ax.tick_params(axis="x", labelsize=6)
@@ -71,7 +71,7 @@ def main():
 
     for ax in (axes2d[0, 0], axes2d[1, 0]):
         ax.set_yticks(y)
-        ax.set_yticklabels([ps.VARIANT_SHORT[v] for v in order], fontsize=6.5)
+        ax.set_yticklabels([ps.VARIANT_SHORT[v] for v in order], fontsize=ps.FONT_ROW_LABEL)
         ax.set_ylim(-0.6, len(order) - 0.2)
 
     ps.save_figure(fig, "fig_metrics_ci", args.out_dir)

@@ -85,7 +85,7 @@ def main():
     ax_h.set_xlabel("Max prediction score")
     ax_h.set_ylabel("Flights")
     ax_h.set_xlim(0, 1)
-    ax_h.legend(loc="upper right", fontsize=5.2, handlelength=1.2,
+    ax_h.legend(loc="upper right", fontsize=6, handlelength=1.2,
                 borderaxespad=0.2)
 
     # ── Panel B: ROC ──────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ def main():
               markeredgecolor="white", markeredgewidth=0.5, zorder=5)
     ax_r.annotate(f"score $\\geq$ 0.5\nTPR {op_tpr:.1%}\nFPR {op_fpr:.1%}",
                   (op_fpr, op_tpr), textcoords="offset points",
-                  xytext=(12, -13), fontsize=5.2, ha="left", va="top")
+                  xytext=(12, -13), fontsize=6, ha="left", va="top")
     ax_r.text(0.97, 0.07, f"AUC = {auc:.2f}", transform=ax_r.transAxes,
               fontsize=6.5, ha="right", va="bottom")
     ax_r.set_xlabel("False-positive rate")
@@ -118,7 +118,7 @@ def main():
 
     for ax, letter in ((ax_h, "A"), (ax_r, "B")):
         ax.text(-0.28, 1.04, letter, transform=ax.transAxes,
-                fontsize=ps.FONT_PANEL_LETTER - 2, fontweight="bold",
+                fontsize=ps.FONT_PANEL_LETTER, fontweight="bold",
                 va="bottom", ha="left")
 
     ps.save_figure(fig, "fig_discrimination", args.out_dir)

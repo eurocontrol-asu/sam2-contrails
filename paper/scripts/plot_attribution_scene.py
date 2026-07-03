@@ -183,10 +183,7 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
         kw = {"cmap": "gray", "vmin": 0, "vmax": 255} if panel_img.ndim == 2 else {}  # already stretched by load_gray
         ax.imshow(panel_img, interpolation="bilinear", **kw)
         ps.clean_ax(ax)
-        ax.text(0.03, 0.97, letter, transform=ax.transAxes,
-                fontsize=ps.FONT_PANEL_LETTER, fontweight="bold",
-                color="black", va="top", ha="left",
-                bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.2))
+        ps.panel_tag(ax, letter)
 
     H, W = img_gray.shape
     margin = 30
@@ -212,7 +209,7 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
             if not cands:
                 continue
             x, y = _place(ax_idx, cands)
-            ax.text(x, y, str(number), fontsize=5.5, fontweight="bold",
+            ax.text(x, y, str(number), fontsize=6, fontweight="bold",
                     color="white", ha="center", va="center", zorder=5,
                     bbox=dict(boxstyle="circle,pad=0.25", fc=hex_c,
                               ec="white", lw=0.5))

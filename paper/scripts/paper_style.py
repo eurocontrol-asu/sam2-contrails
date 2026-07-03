@@ -235,11 +235,12 @@ ALPHA_PRED = 0.95  # vermilion prediction overlay
 ALPHA_GT = 0.95  # green GT overlay (primary)
 ALPHA_GT_UNDER = 0.45  # green GT underlay (behind predictions)
 
-# Font sizes (at figure scale — not at print scale)
-FONT_SCORE_BADGE = 16  # score badges: bold white on vermilion
-FONT_COL_TITLE = 11  # column/panel titles above axes
-FONT_ROW_LABEL = 10  # row labels (left side)
-FONT_PANEL_LETTER = 12  # panel letters (A, B, ...)
+# Font sizes — figures are generated at FINAL print size, so these are the
+# actual printed point sizes. Use these everywhere; do not override locally.
+FONT_SCORE_BADGE = 6  # score badges: bold white on vermilion
+FONT_COL_TITLE = 7  # column/panel titles above axes
+FONT_ROW_LABEL = 6.5  # row labels (left side)
+FONT_PANEL_LETTER = 9  # panel letters (A, B, ...)
 
 # Score badge style
 SCORE_BADGE_KW = dict(
@@ -248,8 +249,17 @@ SCORE_BADGE_KW = dict(
     color="white",
     ha="right",
     va="bottom",
-    bbox=dict(fc=PRED_HEX, alpha=0.92, pad=3.0, boxstyle="round,pad=0.3", ec="none"),
+    bbox=dict(fc=PRED_HEX, alpha=0.92, boxstyle="round,pad=0.25", ec="none"),
 )
+
+
+def panel_tag(ax, letter):
+    """Standard panel letter: bold, white box, top-left corner. Use this in
+    EVERY multi-panel figure so letters look identical paper-wide."""
+    ax.text(0.04, 0.96, letter, transform=ax.transAxes,
+            fontsize=FONT_PANEL_LETTER, fontweight="bold",
+            va="top", ha="left",
+            bbox=dict(fc="white", ec="none", alpha=0.8, pad=1.2))
 
 # Prompt overlay colour (blue, for age-weighted prompt tint on images)
 PROMPT_BLUE = np.array([0.13, 0.47, 0.71])
