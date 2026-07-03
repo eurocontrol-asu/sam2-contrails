@@ -71,13 +71,8 @@ def main():
     own = age > 0
     near = binary_dilation(own, iterations=110)
     region = own | ((np.abs(ternary) > 0) & near)
-    ys, xs = np.nonzero(region)
-    H, W = img_gray.shape
-    r0, r1 = max(0, ys.min() - args.pad), min(H, ys.max() + args.pad)
-    c0, c1 = max(0, xs.min() - args.pad), min(W, xs.max() + args.pad)
-    # square-ish crop for consistent panels
-    side = max(r1 - r0, c1 - c0)
-    r1, c1 = min(H, r0 + side), min(W, c0 + side)
+    # exactly square crop for consistent panels
+    r0, r1, c0, c1 = ps.square_crop_bounds(region, pad=args.pad)
 
     def crop(a):
         return a[r0:r1, c0:c1]
@@ -114,6 +109,11 @@ def main():
         ax.set_title(title, fontsize=ps.FONT_COL_TITLE, pad=2.5)
         ps.panel_tag(ax, letter)
 
+    ps.overlay_legend(fig, [
+        (ps.GT_HEX, "ground truth"),
+        (ps.POS_HEX, "target prompt"),
+        (ps.NEG_HEX, "competing prompt"),
+    ])
     ps.save_figure(fig, "fig_prompts", args.out_dir)
 
 

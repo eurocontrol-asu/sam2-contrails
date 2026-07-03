@@ -3,12 +3,13 @@
 Fig 3: Attribution in action.
 
 Three-panel figure for a single video frame containing multiple simultaneous
-contrails.  Each flight is drawn in a distinct colour so attribution is
-immediately legible.
+contrails.  Uses the paper-wide semantic colors (cyan = prompt, vermilion =
+prediction); flight identity is carried by numbered markers that match
+between panels B and C.
 
   Panel A: raw camera image
-  Panel B: all prompts overlaid (per-flight colours)
-  Panel C: all predictions overlaid (same per-flight colours)
+  Panel B: all prompt footprints (cyan) with flight numbers
+  Panel C: all predictions (vermilion) with matching flight numbers
 
 Default: video 2, frame 176 (12 prompted flights, 8 with predictions), ternary_5.
 
@@ -33,44 +34,6 @@ import matplotlib.patches as mpatches
 import numpy as np
 from PIL import Image
 from pycocotools import mask as mask_utils
-
-
-# Distinct flight palette. No black/near-gray (reserved for the sky image);
-# with >8 categories color alone cannot stay fully colorblind-safe, so each
-# flight also carries a numeric label in panels B/C (redundant coding).
-_FLIGHT_PALETTE = [
-    "#0072B2",   # blue
-    "#D55E00",   # vermilion
-    "#009E73",   # green
-    "#E69F00",   # orange
-    "#CC79A7",   # reddish-purple
-    "#56B4E9",   # sky blue
-    "#F0E442",   # yellow
-    "#6A3D9A",   # violet
-    "#B2182B",   # dark red
-    "#1B7837",   # dark green
-    "#80CDC1",   # light teal
-    "#C51B7D",   # magenta
-    "#8C510A",   # brown
-]
-
-
-def _hex_to_rgb(h):
-    h = h.lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-
-
-def _blend_color(img, mask, rgb, alpha):
-    """Blend color into image. mask can be bool (flat) or float [0,1] (age-weighted)."""
-    out = img.astype(np.float32)
-    if mask.dtype == bool or mask.dtype == np.bool_:
-        weight = mask.astype(np.float32) * alpha
-    else:
-        # Age-weighted: modulate alpha by prompt intensity so gradient is visible
-        weight = np.clip(mask, 0, 1) * alpha
-    for c in range(3):
-        out[:, :, c] = out[:, :, c] * (1 - weight) + rgb[c] * weight
-    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def load_all_objects(pod_dir, video, frame):
@@ -127,8 +90,6 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
     print(f"  Found {len(obj_ids)} prompted objects: {obj_ids}")
 
     # Load all prompt and prediction masks
-    colors   = [_hex_to_rgb(_FLIGHT_PALETTE[i % len(_FLIGHT_PALETTE)])
-                for i in range(len(obj_ids))]
     prompts  = [load_prompt_mask(pod, video, oid, frame) for oid in obj_ids]
     preds    = [load_pred_mask(pred_dir, video, oid, frame) for oid in obj_ids]
 
@@ -136,14 +97,20 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
     print(f"  Predictions found: {n_preds}/{len(obj_ids)}")
 
     # ── Build composite overlays ──────────────────────────────────────────────
+    # Paper-wide semantic colors: every prompt cyan, every prediction
+    # vermilion, drawn as solid outlined strokes exactly like the sibling
+    # figures. Flight identity is carried by the numbered markers instead.
     prompt_vis = img.copy()
     pred_vis   = img.copy()
 
-    for oid, rgb, prompt_mask, pred_mask in zip(obj_ids, colors, prompts, preds):
+    for prompt_mask, pred_mask in zip(prompts, preds):
         if prompt_mask is not None and np.any(prompt_mask > 0):
-            prompt_vis = _blend_color(prompt_vis, prompt_mask, rgb, alpha=0.85)
+            prompt_vis = ps.overlay_mask(prompt_vis, prompt_mask > 0,
+                                         tuple(ps.POS_COLOR),
+                                         crop_w=1024, frac=0.004)
         if pred_mask is not None and pred_mask.any():
-            pred_vis = ps.overlay_mask(pred_vis, pred_mask, rgb,
+            pred_vis = ps.overlay_mask(pred_vis, pred_mask,
+                                       tuple(ps.PRED_COLOR),
                                        crop_w=1024, frac=0.004)
 
     # ── Numeric labels: consecutive numbers for flights visible in B or C ────
@@ -158,15 +125,15 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
         idx = [order[int(q * (len(order) - 1))] for q in qs]
         return [(float(xs[i]), float(ys[i])) for i in idx]
 
-    label_info = []  # (number, hex, prompt_cands, pred_cands)
+    label_info = []  # (number, prompt_cands, pred_cands)
     num = 0
-    for i, (oid, prompt_mask, pred_mask) in enumerate(zip(obj_ids, prompts, preds)):
+    for prompt_mask, pred_mask in zip(prompts, preds):
         p_c = _candidates(prompt_mask) if prompt_mask is not None else []
         d_c = _candidates(pred_mask) if (pred_mask is not None and pred_mask.any()) else []
         if not p_c and not d_c:
             continue
         num += 1
-        label_info.append((num, _FLIGHT_PALETTE[i % len(_FLIGHT_PALETTE)], p_c, d_c))
+        label_info.append((num, p_c, d_c))
 
     # ── Figure layout: 3 panels side by side, full double-column width ───────
     _w = ps.FIG_W_FULL
@@ -188,7 +155,7 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
         ps.panel_tag(ax, letter)
 
     H, W = img_gray.shape
-    margin = 30
+    margin = 50  # ≥ badge radius (~40 data px) so circles are never clipped
     placed = {1: [], 2: []}  # per-panel list of placed label centers
 
     def _place(ax_idx, cands):
@@ -203,23 +170,63 @@ def make_figure(gvccs_dir, pred_dir, video, frame, out_dir):
                 best_d, best_xy = d, (x, y)
             if d == np.inf:
                 break
-        placed[ax_idx].append(best_xy)
+        placed[ax_idx].append(list(best_xy))
         return best_xy
 
-    for number, hex_c, p_c, d_c in label_info:
-        for ax_idx, ax, cands in ((1, axes[1], p_c), (2, axes[2], d_c)):
+    def _spread(labels, min_d=95):
+        """Push overlapping markers apart so no two circles collide, even
+        when the margin clamp funnels several onto the same edge."""
+        for _ in range(60):
+            moved = False
+            for i in range(len(labels)):
+                for j in range(i + 1, len(labels)):
+                    dx = labels[j][0] - labels[i][0]
+                    dy = labels[j][1] - labels[i][1]
+                    d = float(np.hypot(dx, dy))
+                    if d < min_d:
+                        if d < 1e-6:
+                            dx, dy, d = 0.0, 1.0, 1.0
+                        shift = (min_d - d) / 2
+                        ux, uy = dx / d, dy / d
+                        labels[i][0] -= ux * shift; labels[i][1] -= uy * shift
+                        labels[j][0] += ux * shift; labels[j][1] += uy * shift
+                        moved = True
+            for lab in labels:
+                lab[0] = float(np.clip(lab[0], margin, W - margin))
+                lab[1] = float(np.clip(lab[1], margin, H - margin))
+            if not moved:
+                break
+
+    # Neutral numbered markers (white circle, dark text) so the semantic
+    # overlay colors stay unambiguous; the same number marks the same
+    # flight in panels B and C. Place all markers first, then relax
+    # collisions before drawing.
+    to_draw = {1: [], 2: []}
+    for number, p_c, d_c in label_info:
+        for ax_idx, cands in ((1, p_c), (2, d_c)):
             if not cands:
                 continue
-            x, y = _place(ax_idx, cands)
-            ax.text(x, y, str(number), fontsize=6, fontweight="bold",
-                    color="white", ha="center", va="center", zorder=5,
-                    bbox=dict(boxstyle="circle,pad=0.25", fc=hex_c,
-                              ec="white", lw=0.5))
+            _place(ax_idx, cands)
+            to_draw[ax_idx].append(number)
 
+    for ax_idx, ax in ((1, axes[1]), (2, axes[2])):
+        _spread(placed[ax_idx])
+        for (x, y), number in zip(placed[ax_idx], to_draw[ax_idx]):
+            ax.text(x, y, str(number), fontsize=5.5, fontweight="bold",
+                    color="#222222", ha="center", va="center", zorder=5,
+                    bbox=dict(boxstyle="circle,pad=0.25", fc="white",
+                              ec="#555555", lw=0.5, alpha=0.95))
+
+    ps.overlay_legend(fig, [
+        (ps.POS_HEX, "prompt"),
+        (ps.PRED_HEX, "prediction"),
+    ])
     ps.save_figure(fig, "fig_attribution_scene", out_dir)
     plt.close(fig)
-    n_pred = sum(1 for _, _, _, d in label_info if d)
+    n_pred = sum(1 for _, _, d in label_info if d)
+    rejected = [str(n) for n, _, d in label_info if not d]
     print(f"  {len(label_info)} flights labelled; {n_pred} with predictions.")
+    print(f"  Flights without prediction (prompt rejection): {', '.join(rejected) or 'none'}")
 
 
 def main():

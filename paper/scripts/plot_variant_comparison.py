@@ -193,16 +193,8 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
         if fn in gt_masks:
             union_mask |= gt_masks[fn]
 
-    bb = mask_bbox(union_mask)
-    if bb is None:
-        # Use center crop
-        r0, r1, c0, c1 = H//4, 3*H//4, W//4, 3*W//4
-    else:
-        r0, r1, c0, c1 = bb
-        r0 = max(0, r0 - pad)
-        r1 = min(H, r1 + pad)
-        c0 = max(0, c0 - pad)
-        c1 = min(W, c1 + pad)
+    # Square crop so every panel in the grid is square
+    r0, r1, c0, c1 = ps.square_crop_bounds(union_mask, pad=pad)
 
     # Create figure: (1 + n_variants) rows × n columns
     # Row 0: Image + GT  |  Rows 1…: one per variant (prompt + prediction)
@@ -288,6 +280,12 @@ def make_figure(gvccs_dir, pred_dirs, variant_names, video, obj_ids,
                 ax.set_ylabel(row_labels[vrow + 1],
                               fontsize=ps.FONT_ROW_LABEL, labelpad=6)
 
+    ps.overlay_legend(fig, [
+        (ps.GT_HEX, "ground truth"),
+        (ps.PRED_HEX, "prediction"),
+        (ps.POS_HEX, "target prompt"),
+        (ps.NEG_HEX, "competing prompt"),
+    ])
     save(fig, "fig_variant_comparison", out_dir)
     plt.close(fig)
 

@@ -239,8 +239,8 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
     Figure layout — consistent with Figs 6 and 7 (N frames × 3 rows):
 
       Row 0  — full image + GT overlay (green)
-      Row 1  — full image + ternary prompt (blue=target, magenta=competing)
-      Row 2  — full image + faint GT + prediction (vermilion) + score badge
+      Row 1  — full image + ternary prompt (cyan=target, magenta=competing)
+      Row 2  — full image + prediction (vermilion) + score badge
 
     Shows full images without cropping: the ternary prompt's negative signal
     spans most of the image, making a crop context unnecessary.
@@ -278,9 +278,9 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
         vis1 = ps.blend_ternary_prompt(img, ternary)
         axes[1, col].imshow(vis1, interpolation="bilinear")
 
-        # Row 2: GT reference (solid, no outline) under outlined prediction
-        vis2 = ps.overlay_mask(img, gt, tuple(ps.GT_COLOR), crop_w=img.shape[1],
-                               frac=0.004, outline=False)
+        # Row 2: prediction only — GT reference lives in Row 0, so each row
+        # shows exactly one overlay and the colors are never mixed
+        vis2 = img.copy()
         if pred is not None and pred.any():
             vis2 = ps.overlay_mask(vis2, pred, tuple(ps.PRED_COLOR),
                                    crop_w=img.shape[1], frac=0.006)
@@ -304,6 +304,12 @@ def fig_example_sequence(rows, video_id, obj_id, out_dir, name="fig_examples"):
                 axes[r, col].set_ylabel(row_labels[r],
                                         fontsize=ps.FONT_ROW_LABEL, labelpad=4)
 
+    ps.overlay_legend(fig, [
+        (ps.GT_HEX, "ground truth"),
+        (ps.PRED_HEX, "prediction"),
+        (ps.POS_HEX, "target prompt"),
+        (ps.NEG_HEX, "competing prompt"),
+    ])
     save(fig, name, out_dir)
     plt.close(fig)
 

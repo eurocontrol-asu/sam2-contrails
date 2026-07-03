@@ -10,15 +10,17 @@ Variant naming (use these strings everywhere, in scripts and LaTeX):
 
 Color rules:
   · Image overlays   → GT always green (#1a9641), predictions always vermilion (#D55E00),
-                        positive prompt always blue (#0072B2), negative signal always
-                        magenta (#C51B7D).  Do NOT change these by variant.
+                        positive prompt always cyan (#00B8E8), negative signal always
+                        magenta (#C51B7D).  Cyan is light, magenta is dark, so the two
+                        prompt channels differ in lightness as well as hue.
+                        Do NOT change these by variant.
   · Chart elements   → each variant gets its own fixed Okabe-Ito color (VARIANT_COLOR).
   · Detection status → green border / green text = detected; red = missed.
 
 Prompt rendering rules (consistent across ALL figures):
-  · Binary prompt      → solid blue tint (PROMPT_BLUE, alpha=ALPHA_PROMPT)
-  · Age-weighted prompt→ gradient blue tint (intensity ∝ age weight)
-  · Ternary prompt     → blue where positive, MAGENTA where negative signal
+  · Binary prompt      → solid cyan tint (PROMPT_BLUE, alpha=ALPHA_PROMPT)
+  · Age-weighted prompt→ gradient cyan tint (intensity ∝ age weight)
+  · Ternary prompt     → cyan where positive, MAGENTA where negative signal
                          Use blend_ternary_prompt() which handles both channels.
   · The negative signal is reconstructed from all_prompts_union.png:
         ternary = where(pos>0, pos, -union)   — values in [-1, 1]
@@ -148,10 +150,32 @@ def save_figure(fig, name, out_dir="paper/figures"):
 
 # ── Grayscale display constants ───────────────────────────────────────────────
 # Display stretch for sky images. Keep the background slightly muted so the
-# saturated overlay colors (green GT, blue prompt, vermilion prediction)
+# saturated overlay colors (green GT, cyan prompt, vermilion prediction)
 # stand out; a small positive vmin adds contrast without crushing shadows.
 GRAY_VMIN = -48
 GRAY_VMAX = 350
+
+
+def square_crop_bounds(region, pad=60):
+    """Square crop bounds around the True pixels of a boolean region mask.
+
+    The square is centred on the padded bounding box and shifted (never
+    shrunk) to stay inside the image, so every panel that uses this helper
+    is exactly square.  Returns (r0, r1, c0, c1).
+    """
+    H, W = region.shape
+    ys, xs = np.nonzero(region)
+    if len(ys) == 0:
+        side = min(H, W) // 2
+        r0, c0 = (H - side) // 2, (W - side) // 2
+        return r0, r0 + side, c0, c0 + side
+    r0, r1 = max(0, int(ys.min()) - pad), min(H, int(ys.max()) + pad)
+    c0, c1 = max(0, int(xs.min()) - pad), min(W, int(xs.max()) + pad)
+    side = min(max(r1 - r0, c1 - c0), H, W)
+    rc, cc = (r0 + r1) // 2, (c0 + c1) // 2
+    r0 = int(np.clip(rc - side // 2, 0, H - side))
+    c0 = int(np.clip(cc - side // 2, 0, W - side))
+    return r0, r0 + side, c0, c0 + side
 
 
 def load_gray(path):
@@ -230,7 +254,7 @@ def panel_letter(ax, letter, x=-0.08, y=1.05):
 
 # ── Canonical style constants (used by ALL figure scripts) ──────────────────
 # Overlay alphas — near-opaque so masks read clearly against the sky
-ALPHA_PROMPT = 0.9  # blue age-weighted prompt tint
+ALPHA_PROMPT = 0.9  # cyan age-weighted prompt tint
 ALPHA_PRED = 0.95  # vermilion prediction overlay
 ALPHA_GT = 0.95  # green GT overlay (primary)
 ALPHA_GT_UNDER = 0.45  # green GT underlay (behind predictions)
@@ -261,8 +285,36 @@ def panel_tag(ax, letter):
             va="top", ha="left",
             bbox=dict(fc="white", ec="none", alpha=0.8, pad=1.2))
 
-# Prompt overlay colour (blue, for age-weighted prompt tint on images)
-PROMPT_BLUE = np.array([0.13, 0.47, 0.71])
+
+def overlay_legend(fig, entries, y=None):
+    """Compact frameless color legend centred below the panels.
+
+    entries: list of (hex_color, label) in display order. Use the SAME
+    labels across figures: 'ground truth', 'prediction', 'target prompt',
+    'competing prompt'. By default the legend sits directly under the
+    lowest axes (no dead space); saved figures use bbox_inches='tight',
+    which crops the canvas around panels + legend."""
+    import matplotlib.patches as mpatches
+    if y is None:
+        # Measure the RENDERED axes extents (aspect-adjusted at draw time);
+        # get_position() before draw can misplace the anchor.
+        fig.canvas.draw()
+        inv = fig.transFigure.inverted()
+        y0s = [inv.transform((0, a.get_window_extent().y0))[1]
+               for a in fig.axes if a.get_visible()]
+        y = (min(y0s) - 0.015) if y0s else 0.0
+    handles = [mpatches.Patch(fc=h, ec="none", label=l) for h, l in entries]
+    fig.legend(handles=handles, loc="upper center", ncol=len(entries),
+               fontsize=6, frameon=False, bbox_to_anchor=(0.5, y),
+               handlelength=1.0, handleheight=0.7, columnspacing=1.0,
+               handletextpad=0.5, borderaxespad=0.0)
+
+# Prompt overlay colour (cyan, for age-weighted prompt tint on images).
+# Bright cyan: far from the dark magenta negative signal in both hue and
+# lightness. Name kept as PROMPT_BLUE for script compatibility.
+POS_HEX = "#00B8E8"
+POS_COLOR = np.array([0, 184, 232], dtype=np.uint8)
+PROMPT_BLUE = np.array([0.0, 0.72, 0.91])
 
 
 def score_badge(ax, score):
@@ -293,7 +345,7 @@ def clean_ax(ax):
 
 
 def blend_prompt_blue(rgb, prompt_float, alpha=ALPHA_PROMPT):
-    """Blend blue age-weighted prompt onto RGB image.
+    """Blend cyan age-weighted prompt onto RGB image.
     prompt_float: float [0,1] array (age-normalised prompt intensity).
     """
     vis = rgb.astype(float)
@@ -347,7 +399,7 @@ def load_ternary_prompt(pod_dir, video, obj_id, frame):
 def blend_ternary_prompt(rgb, ternary, alpha=ALPHA_PROMPT):
     """Blend full ternary prompt onto RGB image.
 
-    Positive regions → blue  tint (PROMPT_BLUE), intensity ∝ pos value.
+    Positive regions → cyan  tint (PROMPT_BLUE), intensity ∝ pos value.
     Negative regions → magenta tint (NEG_ORANGE), intensity ∝ neg value.
 
     Args:

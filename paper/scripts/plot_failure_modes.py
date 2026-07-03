@@ -94,20 +94,15 @@ def main():
             color = ps.PRED_COLOR if kind == "pred" else ps.GT_COLOR
             vis = ps.overlay_mask(vis, m, tuple(color), crop_w=560, frac=0.010)
 
-        # Crop around everything relevant (or just GT+prediction when the
-        # full prompt stroke would zoom the panel out too far)
+        # Square crop around everything relevant (or just GT+prediction when
+        # the full prompt stroke would zoom the panel out too far)
         region = np.zeros_like(img_gray, dtype=bool)
         for m in (gt, pred):
             if m is not None:
                 region |= m
         if case.get("crop") != "gt_pred":
             region |= ternary > 0.05
-        ys, xs = np.nonzero(region)
-        H, W = img_gray.shape
-        r0, r1 = max(0, ys.min() - args.pad), min(H, ys.max() + args.pad)
-        c0, c1 = max(0, xs.min() - args.pad), min(W, xs.max() + args.pad)
-        side = max(r1 - r0, c1 - c0)
-        r1, c1 = min(H, r0 + side), min(W, c0 + side)
+        r0, r1, c0, c1 = ps.square_crop_bounds(region, pad=args.pad)
 
         ax.imshow(vis[r0:r1, c0:c1], interpolation="bilinear")
         ps.clean_ax(ax)
@@ -121,6 +116,13 @@ def main():
                   "bbox": {**ps.SCORE_BADGE_KW["bbox"], "fc": "#666666"}}
             ax.text(0.96, 0.05, "no detection", transform=ax.transAxes, **kw)
 
+    # No "competing prompt" entry: this figure renders only the positive
+    # prompt channel (negatives are clipped before blending)
+    ps.overlay_legend(fig, [
+        (ps.GT_HEX, "ground truth"),
+        (ps.PRED_HEX, "prediction"),
+        (ps.POS_HEX, "target prompt"),
+    ])
     ps.save_figure(fig, "fig_failure_modes", args.out_dir)
 
 
