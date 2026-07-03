@@ -24,6 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pycocotools.mask as mask_util
+from scipy.ndimage import binary_dilation
 
 # ── Consistent overlay colors ────────────────────────────────────────────────
 _C_GT   = ps.GT_COLOR
@@ -162,7 +163,7 @@ def make_figure(cases, coco, out_dir):
     heights = heights[:-1]  # drop trailing spacer
 
     label_frac = 0.07
-    fig = plt.figure(figsize=(ps.FIG_W_FULL, 3.65))
+    fig = plt.figure(figsize=(ps.FIG_W_FULL, 4.1))
     gs = fig.add_gridspec(
         nrows=len(heights), ncols=nf + 1,
         height_ratios=heights,
@@ -203,15 +204,13 @@ def make_figure(cases, coco, out_dir):
                     ha="center", va="center", fontsize=ps.FONT_ROW_LABEL,
                     rotation=90, linespacing=1.3)
 
-        from scipy.ndimage import binary_dilation
-
         for fi, fidx in enumerate(frames):
             ax = fig.add_subplot(gs[gs_row, fi + 1])
             img = _load_image(vid_str, fidx)
             gt = gt_all[fi]
             vis = img[r0:r1, c0:c1].copy()
             if gt is not None:
-                gt_disp = binary_dilation(gt[r0:r1, c0:c1], iterations=2)
+                gt_disp = binary_dilation(gt[r0:r1, c0:c1], iterations=3)
                 vis = _blend(vis, gt_disp, _C_GT, alpha=0.9)
             ax.imshow(vis, interpolation="bilinear")
             ps.clean_ax(ax)
@@ -243,18 +242,20 @@ def make_figure(cases, coco, out_dir):
 
                 vis = img[r0:r1, c0:c1].copy()
 
-                # Ternary prompt overlay (blue=positive target, orange=negative competing)
+                # Ternary prompt overlay, subdued: context only — the
+                # prediction (vermilion) must dominate visually
                 ternary = _load_ternary_prompt(vid_str, obj, fidx, wmin)
                 if ternary is not None:
-                    vis = _blend_prompt(vis, ternary[r0:r1, c0:c1])
+                    vis = _blend_prompt(vis, ternary[r0:r1, c0:c1], alpha=0.35)
 
-                # Faint GT underlay for reference
+                # Faint GT underlay for reference (dilated for visibility)
                 if gt is not None:
-                    vis = _blend(vis, gt[r0:r1, c0:c1], _C_GT, alpha=ps.ALPHA_GT_UNDER)
+                    gt_u = binary_dilation(gt[r0:r1, c0:c1], iterations=2)
+                    vis = _blend(vis, gt_u, _C_GT, alpha=ps.ALPHA_GT_UNDER)
 
-                # Prediction overlay
+                # Prediction overlay (dilated for print visibility)
                 if pred is not None:
-                    pred_crop = pred[r0:r1, c0:c1]
+                    pred_crop = binary_dilation(pred[r0:r1, c0:c1], iterations=3)
                     vis = _blend(vis, pred_crop, _C_PRED, alpha=ps.ALPHA_PRED)
 
                 ax.imshow(vis, interpolation="bilinear")

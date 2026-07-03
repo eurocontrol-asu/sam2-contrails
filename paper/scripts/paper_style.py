@@ -147,11 +147,11 @@ def save_figure(fig, name, out_dir="paper/figures"):
 
 
 # ── Grayscale display constants ───────────────────────────────────────────────
-# Stretch display range so sky images appear lighter.
-# vmin < 0 means the darkest raw pixels map to a lighter gray;
-# vmax < 255 means midtones are boosted relative to the white point.
-GRAY_VMIN = -30
-GRAY_VMAX = 200
+# Display stretch for sky images. Keep the background slightly muted so the
+# saturated overlay colors (green GT, blue prompt, vermilion prediction)
+# stand out; a small positive vmin adds contrast without crushing shadows.
+GRAY_VMIN = -10
+GRAY_VMAX = 235
 
 
 def load_gray(path):
@@ -198,11 +198,11 @@ def panel_letter(ax, letter, x=-0.08, y=1.05):
 
 
 # ── Canonical style constants (used by ALL figure scripts) ──────────────────
-# Overlay alphas
-ALPHA_PROMPT = 0.75  # blue age-weighted prompt tint
-ALPHA_PRED = 0.85  # vermilion prediction overlay
-ALPHA_GT = 0.65  # green GT overlay (primary)
-ALPHA_GT_UNDER = 0.25  # green GT underlay (faint, behind predictions)
+# Overlay alphas — near-opaque so masks read clearly against the sky
+ALPHA_PROMPT = 0.9  # blue age-weighted prompt tint
+ALPHA_PRED = 0.95  # vermilion prediction overlay
+ALPHA_GT = 0.95  # green GT overlay (primary)
+ALPHA_GT_UNDER = 0.45  # green GT underlay (behind predictions)
 
 # Font sizes (at figure scale — not at print scale)
 FONT_SCORE_BADGE = 16  # score badges: bold white on vermilion
