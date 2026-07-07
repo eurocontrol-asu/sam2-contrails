@@ -74,3 +74,17 @@ results/
 .ruff_cache/
 SAM_2.egg-info/
 sam2_contrails.egg-info/
+docs/
+paper/IEEEtran.cls
+paper/TRAILVISION_journal_v0.tex
+paper/scripts/fig8_score_data.csv
+paper/scripts/plot_analysis.py
+paper/scripts/plot_contamination.py
+paper/scripts/plot_discrimination.py
+paper/scripts/plot_metrics_overview.py
+paper/scripts/plot_per_flight_analysis.py
+paper/scripts/plot_protagonist_flights.py
+paper/scripts/plot_quality_metrics.py
+paper/scripts/plot_scatter_matrix.py
+paper/scripts/plot_system_overview.py
+paper/scripts/plot_tracking_analysis.py
