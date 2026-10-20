@@ -1,0 +1,15 @@
+{
+  "title": "sam2-contrails: physics-informed contrail detection, tracking and attribution in ground-based camera video",
+  "upload_type": "software",
+  "description": "Training, inference and evaluation code for flight-conditioned contrail segmentation with an adapted SAM2, accompanying Dalmau, Jarry and Very, Atmospheric Measurement Techniques (2026).",
+  "creators": [
+    {"name": "Dalmau, Ramon", "affiliation": "EUROCONTROL Innovation Hub"},
+    {"name": "Jarry, Gabriel", "affiliation": "EUROCONTROL Innovation Hub"},
+    {"name": "Very, Philippe", "affiliation": "EUROCONTROL Innovation Hub"}
+  ],
+  "license": "EUPL-1.2",
+  "keywords": ["contrails", "SAM2", "video segmentation", "flight attribution", "ground-based camera"],
+  "related_identifiers": [
+    {"identifier": "10.5194/egusphere-2026-4608", "relation": "isSupplementTo", "resource_type": "publication-preprint"}
+  ]
+}
